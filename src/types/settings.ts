@@ -74,6 +74,9 @@ export type SkillInfo = {
   type: SkillType;
   source: string | null;
   origin?: SkillOrigin;
+  /** Omitted availability means the skill was loaded. */
+  availability?: "loaded" | "shadowed";
+  shadow_reason?: "handwritten" | "duplicate_name" | null;
   description?: string | null;
   triggers?: string[];
   /**

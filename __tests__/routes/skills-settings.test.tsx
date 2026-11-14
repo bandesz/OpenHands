@@ -1683,4 +1683,95 @@ Full skill body.`,
     });
     expect(urlField).toHaveValue(urlB);
   });
+
+  it("shows a shadowed repository skill beside the hand-written card", async () => {
+    const handwrittenSource = "~/.agents/skills/review/SKILL.md";
+    const checkoutSource = `${REPOSITORY_CHECKOUT_PATH}/review/SKILL.md`;
+    vi.spyOn(SkillsRepositoryService, "get").mockResolvedValue(
+      readySkillsRepository("https://github.com/org/skills"),
+    );
+    mockSkillList([
+      buildSkill({
+        name: "review",
+        origin: "user",
+        source: handwrittenSource,
+        description: "Hand-written review notes.",
+        triggers: ["review-please"],
+        availability: "loaded",
+      }),
+      buildSkill({
+        name: "review",
+        origin: "user",
+        source: checkoutSource,
+        description: "Repository review notes.",
+        triggers: ["review-please"],
+        availability: "shadowed",
+        shadow_reason: "handwritten",
+      }),
+    ]);
+
+    renderSkillsSettingsScreen();
+
+    const handwritten = await screen.findByTestId("skill-card-review");
+    expect(
+      within(handwritten).getByTestId("skill-source-review"),
+    ).toHaveTextContent("~/.agents/skills/review/");
+    expect(
+      within(handwritten).getByTestId("skill-toggle-review"),
+    ).toBeEnabled();
+    expect(
+      within(handwritten).getByTestId("skill-toggle-review"),
+    ).toHaveAttribute("aria-checked", "true");
+
+    const shadowed = screen.getByTestId("skill-not-loaded-review");
+    expect(shadowed).toHaveTextContent("SETTINGS$SKILLS_SHADOWED_HANDWRITTEN");
+    expect(within(shadowed).getByTestId("skill-toggle-review")).toBeDisabled();
+    expect(screen.getAllByTestId("skill-card-review")).toHaveLength(1);
+  });
+
+  it("shows a duplicate repository skill name as not loaded", async () => {
+    const loadedSource = `${REPOSITORY_CHECKOUT_PATH}/alpha/SKILL.md`;
+    const duplicateSource = `${REPOSITORY_CHECKOUT_PATH}/zeta/SKILL.md`;
+    vi.spyOn(SkillsRepositoryService, "get").mockResolvedValue(
+      readySkillsRepository("https://github.com/org/skills"),
+    );
+    mockSkillList([
+      buildSkill({
+        name: "review",
+        origin: "user",
+        source: loadedSource,
+        description: "First checkout folder.",
+        availability: "loaded",
+        shadow_reason: null,
+      }),
+      buildSkill({
+        name: "review",
+        origin: "user",
+        source: duplicateSource,
+        description: "Later checkout folder.",
+        availability: "shadowed",
+        shadow_reason: "duplicate_name",
+      }),
+    ]);
+
+    renderSkillsSettingsScreen();
+
+    const loaded = await screen.findByTestId("skill-card-review");
+    expect(within(loaded).getByTestId("skill-source-review")).toHaveTextContent(
+      `${REPOSITORY_CHECKOUT_PATH}/alpha/`,
+    );
+    expect(within(loaded).getByTestId("skill-toggle-review")).toBeEnabled();
+    expect(loaded).not.toHaveTextContent(
+      "SETTINGS$SKILLS_SHADOWED_DUPLICATE_NAME",
+    );
+
+    const shadowed = screen.getByTestId("skill-not-loaded-review");
+    expect(shadowed).toHaveTextContent(
+      "SETTINGS$SKILLS_SHADOWED_DUPLICATE_NAME",
+    );
+    expect(shadowed).not.toHaveTextContent(
+      "SETTINGS$SKILLS_SHADOWED_HANDWRITTEN",
+    );
+    expect(within(shadowed).getByTestId("skill-toggle-review")).toBeDisabled();
+  });
 });

@@ -16,6 +16,18 @@ import {
   extensionModuleCardSurfaceClassName,
 } from "#/utils/extension-module-card-classes";
 
+const SHADOWED_SKILL_MESSAGE_KEY = {
+  handwritten: I18nKey.SETTINGS$SKILLS_SHADOWED_HANDWRITTEN,
+  duplicate_name: I18nKey.SETTINGS$SKILLS_SHADOWED_DUPLICATE_NAME,
+} as const;
+
+function shadowedSkillMessageKey(skill: SkillInfo): I18nKey | null {
+  if (skill.availability !== "shadowed" || !skill.shadow_reason) {
+    return null;
+  }
+  return SHADOWED_SKILL_MESSAGE_KEY[skill.shadow_reason];
+}
+
 interface SkillCardProps {
   skill: SkillInfo;
   enabled: boolean;
@@ -37,6 +49,8 @@ export function SkillCard({
   const description = getSkillCardDescription(skill);
   const pills = React.useMemo(() => buildSkillPills(skill, t), [skill, t]);
   const showCopySource = isCopyableSkillSource(skill.source);
+  const isShadowed = skill.availability === "shadowed";
+  const shadowMessageKey = shadowedSkillMessageKey(skill);
 
   const handleCopySource = async (event: React.MouseEvent) => {
     event.stopPropagation();
@@ -66,7 +80,11 @@ export function SkillCard({
 
   return (
     <div
-      data-testid={`skill-card-${skill.name}`}
+      data-testid={
+        isShadowed
+          ? `skill-not-loaded-${skill.name}`
+          : `skill-card-${skill.name}`
+      }
       role="button"
       tabIndex={0}
       onClick={onOpen}
@@ -124,7 +142,7 @@ export function SkillCard({
               testId={`skill-toggle-${skill.name}`}
               isSelected={enabled}
               onToggle={onToggle}
-              isDisabled={isToggleDisabled}
+              isDisabled={isToggleDisabled || isShadowed}
               disableTooltipKey={I18nKey.COMMON$DISABLE}
             />
           </header>
@@ -138,6 +156,12 @@ export function SkillCard({
                 {description}
               </p>
             </div>
+          ) : null}
+
+          {shadowMessageKey ? (
+            <p className="break-words text-xs leading-relaxed text-tertiary-light">
+              {t(shadowMessageKey)}
+            </p>
           ) : null}
 
           {pills.length > 0 ? (
