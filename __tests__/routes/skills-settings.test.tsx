@@ -1312,4 +1312,375 @@ Full skill body.`,
     expect(screen.getByTestId("skill-card-review")).toBeInTheDocument();
     expect(getSpy).toHaveBeenCalledTimes(getsBeforeSave);
   });
+
+  it("syncs a repository and shows the updated review description", async () => {
+    const user = userEvent.setup();
+    const repositoryUrl = "https://github.com/org/skills";
+    const reviewSource = `${REPOSITORY_CHECKOUT_PATH}/review/SKILL.md`;
+    const updatedSha = "89abcdef0123456789abcdef0123456789abcdef";
+    let repository = readySkillsRepository(repositoryUrl);
+    let catalog = [
+      buildSkill({
+        name: "review",
+        origin: "user",
+        source: reviewSource,
+        description: "Review the change.",
+        triggers: ["review-please"],
+      }),
+    ];
+    vi.spyOn(SkillsRepositoryService, "get").mockImplementation(() =>
+      Promise.resolve(repository),
+    );
+    vi.spyOn(SkillsService, "getSkillCatalog").mockImplementation(
+      async () => catalog,
+    );
+    vi.spyOn(SkillsService, "getSkills").mockResolvedValue([]);
+
+    let resolveSync: (value: SkillsRepository) => void = () => {};
+    const syncGate = new Promise<SkillsRepository>((resolve) => {
+      resolveSync = resolve;
+    });
+    const syncSpy = vi
+      .spyOn(SkillsRepositoryService, "sync")
+      .mockImplementation(() => syncGate);
+
+    renderSkillsSettingsScreen();
+
+    expect(
+      await screen.findByTestId("skill-description-review"),
+    ).toHaveTextContent("Review the change.");
+    await user.click(screen.getByTestId("skills-repository-sync"));
+
+    expect(syncSpy).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("skills-repository-status")).toHaveTextContent(
+      "SETTINGS$SKILLS_REPOSITORY_SYNCING",
+    );
+
+    repository = { ...repository, commit_sha: updatedSha };
+    catalog = [
+      buildSkill({
+        name: "review",
+        origin: "user",
+        source: reviewSource,
+        description: "Review the updated change.",
+        triggers: ["review-please"],
+      }),
+    ];
+    resolveSync(repository);
+
+    const status = await screen.findByTestId("skills-repository-status");
+    await waitFor(() => {
+      expect(status).toHaveTextContent("SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE");
+      expect(status).toHaveTextContent("89abcde");
+      expect(status).not.toHaveTextContent("0123456");
+      expect(status).not.toHaveTextContent(
+        "SETTINGS$SKILLS_REPOSITORY_SYNCING",
+      );
+    });
+    expect(screen.getByTestId("skill-description-review")).toHaveTextContent(
+      "Review the updated change.",
+    );
+  });
+
+  it("shows Syncing and refetches while a startup pull is running", async () => {
+    const repositoryUrl = "https://github.com/org/skills";
+    const updatedSha = "89abcdef0123456789abcdef0123456789abcdef";
+    let fetches = 0;
+    const getSpy = vi
+      .spyOn(SkillsRepositoryService, "get")
+      .mockImplementation(async () => {
+        fetches += 1;
+        if (fetches === 1) {
+          return {
+            ...readySkillsRepository(repositoryUrl),
+            status: "syncing",
+          };
+        }
+        return {
+          ...readySkillsRepository(repositoryUrl),
+          commit_sha: updatedSha,
+        };
+      });
+    mockSkillList([]);
+
+    vi.useFakeTimers();
+    try {
+      renderSkillsSettingsScreen();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(screen.getByTestId("skills-repository-status")).toHaveTextContent(
+        "SETTINGS$SKILLS_REPOSITORY_SYNCING",
+      );
+      const callsWhileSyncing = getSpy.mock.calls.length;
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_999);
+      });
+      expect(getSpy).toHaveBeenCalledTimes(callsWhileSyncing);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      expect(getSpy.mock.calls.length).toBeGreaterThan(callsWhileSyncing);
+      // The refetch resolves on a microtask; Query notifies on the next timer.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+
+      const status = screen.getByTestId("skills-repository-status");
+      expect(status).toHaveTextContent("SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE");
+      expect(status).toHaveTextContent("89abcde");
+
+      const callsAfterReady = getSpy.mock.calls.length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_000);
+      });
+      expect(getSpy).toHaveBeenCalledTimes(callsAfterReady);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("removes the review card when a sync catalog omits it", async () => {
+    const user = userEvent.setup();
+    const repositoryUrl = "https://github.com/org/skills";
+    const reviewSource = `${REPOSITORY_CHECKOUT_PATH}/review/SKILL.md`;
+    const updatedSha = "fedcba9876543210fedcba9876543210fedcba98";
+    let repository = readySkillsRepository(repositoryUrl);
+    let catalog = [
+      buildSkill({
+        name: "review",
+        origin: "user",
+        source: reviewSource,
+        description: "Review the change.",
+        triggers: ["review-please"],
+      }),
+    ];
+    vi.spyOn(SkillsRepositoryService, "get").mockImplementation(() =>
+      Promise.resolve(repository),
+    );
+    vi.spyOn(SkillsService, "getSkillCatalog").mockImplementation(
+      async () => catalog,
+    );
+    vi.spyOn(SkillsService, "getSkills").mockResolvedValue([]);
+    vi.spyOn(SkillsRepositoryService, "sync").mockImplementation(async () => {
+      repository = { ...repository, commit_sha: updatedSha };
+      catalog = [];
+      return repository;
+    });
+
+    renderSkillsSettingsScreen();
+
+    expect(await screen.findByTestId("skill-card-review")).toBeInTheDocument();
+    await user.click(screen.getByTestId("skills-repository-sync"));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("skill-card-review")).not.toBeInTheDocument();
+    });
+    const status = screen.getByTestId("skills-repository-status");
+    expect(status).toHaveTextContent("SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE");
+    expect(status).toHaveTextContent("fedcba9");
+  });
+
+  it("shows a dirty sync failure and keeps the previous SHA", async () => {
+    const user = userEvent.setup();
+    const repositoryUrl = "https://github.com/org/skills";
+    const reviewSource = `${REPOSITORY_CHECKOUT_PATH}/review/SKILL.md`;
+    vi.spyOn(SkillsRepositoryService, "get").mockResolvedValue(
+      readySkillsRepository(repositoryUrl),
+    );
+    vi.spyOn(SkillsService, "getSkillCatalog").mockResolvedValue([
+      buildSkill({
+        name: "review",
+        origin: "user",
+        source: reviewSource,
+        description: "Review the change.",
+        triggers: ["review-please"],
+      }),
+    ]);
+    vi.spyOn(SkillsService, "getSkills").mockResolvedValue([]);
+    vi.spyOn(SkillsRepositoryService, "sync").mockRejectedValue(
+      Object.assign(new Error("HTTP 409"), {
+        status: 409,
+        error_code: "dirty",
+        error: "Repository has local changes. Pull was not applied.",
+      }),
+    );
+
+    renderSkillsSettingsScreen();
+
+    expect(await screen.findByTestId("skill-card-review")).toBeInTheDocument();
+    await user.click(screen.getByTestId("skills-repository-sync"));
+
+    const status = screen.getByTestId("skills-repository-status");
+    await waitFor(() => {
+      expect(status).toHaveTextContent("SETTINGS$SKILLS_REPOSITORY_DIRTY");
+    });
+    expect(status).toHaveTextContent("0123456");
+    expect(status).not.toHaveTextContent(
+      "SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE",
+    );
+    expect(screen.getByTestId("skill-description-review")).toHaveTextContent(
+      "Review the change.",
+    );
+  });
+
+  it("shows a git sync failure and keeps the previous SHA", async () => {
+    const user = userEvent.setup();
+    const repositoryUrl = "https://github.com/org/skills";
+    const serverError = "Could not pull: network unreachable";
+    const reviewSource = `${REPOSITORY_CHECKOUT_PATH}/review/SKILL.md`;
+    vi.spyOn(SkillsRepositoryService, "get").mockResolvedValue(
+      readySkillsRepository(repositoryUrl),
+    );
+    vi.spyOn(SkillsService, "getSkillCatalog").mockResolvedValue([
+      buildSkill({
+        name: "review",
+        origin: "user",
+        source: reviewSource,
+        description: "Review the change.",
+        triggers: ["review-please"],
+      }),
+    ]);
+    vi.spyOn(SkillsService, "getSkills").mockResolvedValue([]);
+    vi.spyOn(SkillsRepositoryService, "sync").mockRejectedValue(
+      Object.assign(new Error("HTTP 422"), {
+        status: 422,
+        error_code: "git_failed",
+        error: serverError,
+      }),
+    );
+
+    renderSkillsSettingsScreen();
+
+    expect(await screen.findByTestId("skill-card-review")).toBeInTheDocument();
+    await user.click(screen.getByTestId("skills-repository-sync"));
+
+    const status = screen.getByTestId("skills-repository-status");
+    await waitFor(() => {
+      expect(status).toHaveTextContent(serverError);
+    });
+    expect(status).toHaveTextContent("0123456");
+    expect(status).not.toHaveTextContent(
+      "SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE",
+    );
+    expect(screen.getByTestId("skill-description-review")).toHaveTextContent(
+      "Review the change.",
+    );
+  });
+
+  it("shows a startup pull error and the previous SHA", async () => {
+    const repositoryUrl = "https://github.com/org/skills";
+    const serverError = "Could not fast-forward: network unreachable";
+    vi.spyOn(SkillsRepositoryService, "get").mockResolvedValue({
+      ...readySkillsRepository(repositoryUrl),
+      status: "error",
+      error_code: "git_failed",
+      error: serverError,
+    });
+    mockSkillList([]);
+
+    renderSkillsSettingsScreen();
+
+    const status = await screen.findByTestId("skills-repository-status");
+    expect(status).toHaveTextContent(serverError);
+    expect(status).toHaveTextContent("0123456");
+    expect(status).not.toHaveTextContent(
+      "SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE",
+    );
+    expect(screen.getByTestId("skills-repository-url")).toHaveValue(
+      repositoryUrl,
+    );
+  });
+
+  it("shows a failed repository load instead of the empty form", async () => {
+    vi.spyOn(SkillsRepositoryService, "get").mockRejectedValue(
+      new Error("Failed to fetch"),
+    );
+    mockSkillList([]);
+
+    renderSkillsSettingsScreen();
+
+    const status = await screen.findByTestId("skills-repository-status");
+    expect(status).toHaveTextContent("Failed to fetch");
+    expect(
+      screen.queryByTestId("skills-repository-url"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("skills-repository-loading"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps a failed replacement error until sync succeeds", async () => {
+    const user = userEvent.setup();
+    const urlA = "https://github.com/org/skills";
+    const urlB = "https://github.com/org/other-skills";
+    const saveFailure = "Could not clone https://github.com/org/other-skills";
+    const updatedSha = "89abcdef0123456789abcdef0123456789abcdef";
+    const reviewSource = `${REPOSITORY_CHECKOUT_PATH}/review/SKILL.md`;
+    let repository = readySkillsRepository(urlA);
+    vi.spyOn(SkillsRepositoryService, "get").mockImplementation(() =>
+      Promise.resolve(repository),
+    );
+    mockSkillList([
+      buildSkill({
+        name: "review",
+        origin: "user",
+        source: reviewSource,
+        description: "Review the change.",
+        triggers: ["review-please"],
+      }),
+    ]);
+    vi.spyOn(SkillsRepositoryService, "save").mockRejectedValue(
+      Object.assign(new Error("HTTP 422"), {
+        error: saveFailure,
+        error_code: "git_failed",
+      }),
+    );
+    const syncSpy = vi
+      .spyOn(SkillsRepositoryService, "sync")
+      .mockRejectedValueOnce(
+        Object.assign(new Error("HTTP 409"), {
+          status: 409,
+          error_code: "dirty",
+          error: "Repository has local changes. Pull was not applied.",
+        }),
+      );
+
+    renderSkillsSettingsScreen();
+
+    const urlField = await screen.findByTestId("skills-repository-url");
+    await user.clear(urlField);
+    await user.type(urlField, urlB);
+    await user.click(screen.getByTestId("skills-repository-save"));
+
+    const status = await screen.findByTestId("skills-repository-status");
+    expect(status).toHaveTextContent(saveFailure);
+    expect(status).toHaveTextContent("0123456");
+
+    await user.click(screen.getByTestId("skills-repository-sync"));
+
+    await waitFor(() => {
+      expect(status).toHaveTextContent("SETTINGS$SKILLS_REPOSITORY_DIRTY");
+    });
+    expect(status).toHaveTextContent(saveFailure);
+    expect(status).toHaveTextContent("0123456");
+    expect(screen.getByTestId("skill-card-review")).toBeInTheDocument();
+
+    syncSpy.mockImplementation(async () => {
+      repository = { ...repository, commit_sha: updatedSha };
+      return repository;
+    });
+    await user.click(screen.getByTestId("skills-repository-sync"));
+
+    await waitFor(() => {
+      expect(status).toHaveTextContent("SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE");
+      expect(status).toHaveTextContent("89abcde");
+      expect(status).not.toHaveTextContent(saveFailure);
+      expect(status).not.toHaveTextContent("SETTINGS$SKILLS_REPOSITORY_DIRTY");
+    });
+    expect(urlField).toHaveValue(urlB);
+  });
 });

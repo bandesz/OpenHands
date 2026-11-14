@@ -21095,6 +21095,24 @@
     "ca": "Sincronitza",
     "id": "Sinkronkan"
   },
+  "SETTINGS$SKILLS_REPOSITORY_DIRTY": {
+    "en": "Repository has local changes. Pull was not applied.",
+    "ja": "リポジトリにローカルの変更があります。プルは適用されませんでした。",
+    "zh-CN": "仓库有本地更改。拉取未应用。",
+    "zh-TW": "存放庫有本機變更。拉取未套用。",
+    "ko-KR": "저장소에 로컬 변경 사항이 있습니다. 풀이 적용되지 않았습니다.",
+    "no": "Repositoriet har lokale endringer. Trekkingen ble ikke brukt.",
+    "ar": "يحتوي المستودع على تغييرات محلية. لم يُطبَّق السحب.",
+    "de": "Das Repository hat lokale Änderungen. Der Abruf wurde nicht angewendet.",
+    "fr": "Le dépôt contient des modifications locales. La récupération n’a pas été appliquée.",
+    "it": "Il repository ha modifiche locali. Il recupero non è stato applicato.",
+    "pt": "O repositório tem alterações locais. A obtenção não foi aplicada.",
+    "es": "El repositorio tiene cambios locales. La obtención no se aplicó.",
+    "tr": "Depoda yerel değişiklikler var. Çekme uygulanmadı.",
+    "uk": "У репозиторії є локальні зміни. Отримання не застосовано.",
+    "ca": "El repositori té canvis locals. L'obtenció no s'ha aplicat.",
+    "id": "Repositori memiliki perubahan lokal. Pengambilan tidak diterapkan."
+  },
   "SETTINGS$SKILLS_NO_SKILLS": {
     "en": "No skills found.",
     "ja": "スキルが見つかりません。",

@@ -5,6 +5,7 @@ import { useSkillCatalog } from "#/hooks/query/use-skill-catalog";
 import {
   useSaveSkillsRepository,
   useSkillsRepository,
+  useSyncSkillsRepository,
 } from "#/hooks/query/use-skills-repository";
 import { I18nKey } from "#/i18n/declaration";
 import { formControlFieldClassName } from "#/utils/form-control-classes";
@@ -12,6 +13,7 @@ import { cn } from "#/utils/utils";
 
 const SKILLS_REPOSITORY_URL_INPUT_ID = "skills-repository-url";
 const SKILLS_REPOSITORY_URL_ERROR_ID = "skills-repository-url-error";
+const DIRTY_REPOSITORY_ERROR_CODE = "dirty";
 const SCP_GIT_URL = /^git@[^/\s:]+:[^\s]+$/;
 const SENSITIVE_URL_PARAMETER_MARKERS = [
   "authorization",
@@ -80,6 +82,26 @@ function skillsRepositorySaveError(error: unknown): string | null {
   return typeof message === "string" && message.length > 0 ? message : null;
 }
 
+function repositoryFailureMessage(error: unknown): string | null {
+  if (typeof error === "string" && error.length > 0) return error;
+  if (error instanceof Error && error.message.length > 0) return error.message;
+  return null;
+}
+
+function syncFailureMessage(
+  error: unknown,
+  dirtyMessage: string,
+): string | null {
+  if (typeof error !== "object" || error === null) return null;
+  if (
+    "error_code" in error &&
+    error.error_code === DIRTY_REPOSITORY_ERROR_CODE
+  ) {
+    return dirtyMessage;
+  }
+  return skillsRepositorySaveError(error) ?? repositoryFailureMessage(error);
+}
+
 function sourceIsInCheckout(
   source: string | null | undefined,
   checkoutPath: string | null,
@@ -95,12 +117,28 @@ export function SkillsRepositoryPanel() {
   const repositoryQuery = useSkillsRepository();
   const catalog = useSkillCatalog();
   const saveRepository = useSaveSkillsRepository();
+  const syncRepository = useSyncSkillsRepository();
   const repository = repositoryQuery.data;
   const [draftUrl, setDraftUrl] = React.useState<string | null>(null);
   const [saveError, setSaveError] = React.useState<string | null>(null);
   const url = draftUrl ?? repository?.url ?? "";
 
   if (!repository) {
+    if (repositoryQuery.isError) {
+      return (
+        <div
+          data-testid="skills-repository-panel"
+          className="flex flex-col gap-3"
+        >
+          <p
+            data-testid="skills-repository-status"
+            className="text-sm text-danger"
+          >
+            {repositoryFailureMessage(repositoryQuery.error)}
+          </p>
+        </div>
+      );
+    }
     return (
       <div data-testid="skills-repository-panel">
         <div
@@ -112,12 +150,31 @@ export function SkillsRepositoryPanel() {
   }
 
   const isSaving = saveRepository.isPending;
+  const isSyncPending = syncRepository.isPending;
+  const isSyncing =
+    isSaving || isSyncPending || repository.status === "syncing";
+  const syncFailure = isSyncPending
+    ? null
+    : syncFailureMessage(
+        syncRepository.error,
+        t(I18nKey.SETTINGS$SKILLS_REPOSITORY_DIRTY),
+      );
+  const resourceError =
+    !isSyncing && syncFailure === null && repository.status === "error"
+      ? repository.error
+      : null;
   const trimmedUrl = url.trim();
   const urlIsValid = isSkillsRepositoryGitUrl(trimmedUrl);
   const canSave = urlIsValid && !isSaving;
-  const displayedSaveError = isSaving ? null : saveError;
+  const displayedSaveError = isSaving || isSyncPending ? null : saveError;
   const shortSha = repository.commit_sha?.slice(0, 7) ?? "";
-  const showReadyStatus = !isSaving && repository.status === "ready";
+  const showReadyStatus =
+    !isSyncing && syncFailure === null && repository.status === "ready";
+  const showPreviousSha =
+    !isSyncing &&
+    !showReadyStatus &&
+    shortSha.length > 0 &&
+    (syncFailure !== null || repository.status === "error");
   const hasRepositorySkills =
     catalog.data?.some((skill) =>
       sourceIsInCheckout(skill.source, repository.checkout_path),
@@ -183,8 +240,15 @@ export function SkillsRepositoryPanel() {
               type="button"
               variant="secondary"
               testId="skills-repository-sync"
-              isDisabled={isSaving}
+              isDisabled={isSaving || isSyncPending}
               className="shrink-0"
+              onClick={() => {
+                syncRepository.mutate(undefined, {
+                  onSuccess: () => {
+                    setSaveError(null);
+                  },
+                });
+              }}
             >
               {t(I18nKey.SETTINGS$SKILLS_REPOSITORY_SYNC)}
             </BrandButton>
@@ -198,12 +262,17 @@ export function SkillsRepositoryPanel() {
             {t(I18nKey.SETTINGS$SKILLS_REPOSITORY_INVALID_URL)}
           </p>
         )}
-        {isSaving || showReadyStatus || displayedSaveError ? (
+        {isSyncing ||
+        showReadyStatus ||
+        syncFailure ||
+        resourceError ||
+        showPreviousSha ||
+        displayedSaveError ? (
           <p
             data-testid="skills-repository-status"
             className="text-sm text-tertiary-light"
           >
-            {isSaving ? t(I18nKey.SETTINGS$SKILLS_REPOSITORY_SYNCING) : null}
+            {isSyncing ? t(I18nKey.SETTINGS$SKILLS_REPOSITORY_SYNCING) : null}
             {showReadyStatus ? (
               <>
                 {t(I18nKey.SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE)}
@@ -213,6 +282,18 @@ export function SkillsRepositoryPanel() {
                     <span className="font-mono">{shortSha}</span>
                   </>
                 ) : null}
+              </>
+            ) : null}
+            {syncFailure ? (
+              <span className="block text-danger">{syncFailure}</span>
+            ) : null}
+            {resourceError ? (
+              <span className="block text-danger">{resourceError}</span>
+            ) : null}
+            {showPreviousSha ? (
+              <>
+                {" "}
+                <span className="font-mono">{shortSha}</span>
               </>
             ) : null}
             {displayedSaveError ? (
