@@ -1830,4 +1830,89 @@ Full skill body.`,
     );
     expect(within(shadowed).getByTestId("skill-toggle-review")).toBeDisabled();
   });
+
+  it("turns a loaded repository skill off, keeps it off after sync, and turns it back on", async () => {
+    const user = userEvent.setup();
+    const repositoryUrl = "https://github.com/org/skills";
+    const reviewSource = `${REPOSITORY_CHECKOUT_PATH}/review/SKILL.md`;
+    const updatedSha = "89abcdef0123456789abcdef0123456789abcdef";
+    let repository = readySkillsRepository(repositoryUrl);
+    const loadedReview = (description: string) =>
+      buildSkill({
+        name: "review",
+        origin: "user",
+        source: reviewSource,
+        description,
+        triggers: ["review-please"],
+        availability: "loaded",
+      });
+    let catalog = [loadedReview("Review the change.")];
+    vi.spyOn(SkillsRepositoryService, "get").mockImplementation(() =>
+      Promise.resolve(repository),
+    );
+    vi.spyOn(SkillsService, "getSkillCatalog").mockImplementation(
+      async () => catalog,
+    );
+    vi.spyOn(SkillsService, "getSkills").mockResolvedValue([]);
+    const saveSpy = vi
+      .spyOn(SettingsService, "saveSettings")
+      .mockResolvedValue(true);
+    vi.spyOn(SkillsRepositoryService, "sync").mockImplementation(async () => {
+      repository = { ...repository, commit_sha: updatedSha };
+      catalog = [loadedReview("Review the updated change.")];
+      return repository;
+    });
+
+    renderSkillsSettingsScreen();
+
+    const card = await screen.findByTestId("skill-card-review");
+    const toggle = within(card).getByTestId("skill-toggle-review");
+    expect(toggle).toBeEnabled();
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+    expect(within(card).getByTestId("skill-source-review")).toHaveTextContent(
+      reviewSource,
+    );
+
+    await user.click(toggle);
+
+    await waitFor(() =>
+      expect(saveSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ disabled_skills: ["review"] }),
+      ),
+    );
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+
+    await user.click(screen.getByTestId("skills-repository-sync"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("skills-repository-status")).toHaveTextContent(
+        "89abcde",
+      );
+      expect(screen.getByTestId("skill-description-review")).toHaveTextContent(
+        "Review the updated change.",
+      );
+    });
+    expect(
+      within(screen.getByTestId("skill-card-review")).getByTestId(
+        "skill-toggle-review",
+      ),
+    ).toHaveAttribute("aria-checked", "false");
+
+    await user.click(
+      within(screen.getByTestId("skill-card-review")).getByTestId(
+        "skill-toggle-review",
+      ),
+    );
+
+    await waitFor(() =>
+      expect(saveSpy).toHaveBeenLastCalledWith(
+        expect.objectContaining({ disabled_skills: [] }),
+      ),
+    );
+    expect(
+      within(screen.getByTestId("skill-card-review")).getByTestId(
+        "skill-toggle-review",
+      ),
+    ).toHaveAttribute("aria-checked", "true");
+  });
 });
