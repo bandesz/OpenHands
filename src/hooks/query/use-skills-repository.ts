@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import SkillsRepositoryService from "#/api/skills-repository-service";
 import { useActiveBackend } from "#/contexts/active-backend-context";
@@ -12,8 +13,8 @@ const SKILLS_REPOSITORY_SYNC_POLL_MS = 2_000;
 
 export function useSkillsRepository() {
   const { backend } = useActiveBackend();
-
-  return useQuery({
+  const queryClient = useQueryClient();
+  const query = useQuery({
     queryKey: [...SKILLS_REPOSITORY_QUERY_KEYS.all, backend.id, backend.host],
     queryFn: () => SkillsRepositoryService.get(),
     ...CONFIG_CACHE_OPTIONS,
@@ -24,6 +25,20 @@ export function useSkillsRepository() {
         : false,
     meta: { disableToast: true },
   });
+  const status = query.data?.status;
+  const wasSyncing = useRef(false);
+
+  useEffect(() => {
+    const syncing = status === "syncing";
+    if (wasSyncing.current && !syncing && status !== undefined) {
+      void queryClient.invalidateQueries({
+        queryKey: SKILL_CATALOG_QUERY_KEYS.all,
+      });
+    }
+    wasSyncing.current = syncing;
+  }, [queryClient, status]);
+
+  return query;
 }
 
 export function useSaveSkillsRepository() {

@@ -6,6 +6,7 @@ import {
   MODAL_MAX_WIDTH_VIEWPORT,
   modalWidthClassName,
 } from "#/components/shared/modals/modal-body";
+import { useActiveBackend } from "#/contexts/active-backend-context";
 import { useSkillCatalog } from "#/hooks/query/use-skill-catalog";
 import {
   useRemoveSkillsRepository,
@@ -95,6 +96,10 @@ function repositoryFailureMessage(error: unknown): string | null {
   return null;
 }
 
+function repositoryActionFailureMessage(error: unknown): string | null {
+  return skillsRepositorySaveError(error) ?? repositoryFailureMessage(error);
+}
+
 function syncFailureMessage(
   error: unknown,
   dirtyMessage: string,
@@ -106,7 +111,7 @@ function syncFailureMessage(
   ) {
     return dirtyMessage;
   }
-  return skillsRepositorySaveError(error) ?? repositoryFailureMessage(error);
+  return repositoryActionFailureMessage(error);
 }
 
 function sourceIsInCheckout(
@@ -121,6 +126,7 @@ function sourceIsInCheckout(
 
 export function SkillsRepositoryPanel() {
   const { t } = useTranslation("openhands");
+  const { backend } = useActiveBackend();
   const repositoryQuery = useSkillsRepository();
   const catalog = useSkillCatalog();
   const saveRepository = useSaveSkillsRepository();
@@ -131,6 +137,12 @@ export function SkillsRepositoryPanel() {
   const [saveError, setSaveError] = React.useState<string | null>(null);
   const [removeConfirmOpen, setRemoveConfirmOpen] = React.useState(false);
   const url = draftUrl ?? repository?.url ?? "";
+
+  React.useEffect(() => {
+    setDraftUrl(null);
+    setSaveError(null);
+    setRemoveConfirmOpen(false);
+  }, [backend.id, backend.host]);
 
   if (!repository) {
     if (repositoryQuery.isError) {
@@ -203,7 +215,7 @@ export function SkillsRepositoryPanel() {
         setSaveError(null);
       },
       onError: (error) => {
-        setSaveError(skillsRepositorySaveError(error));
+        setSaveError(repositoryActionFailureMessage(error));
       },
     });
   };
@@ -222,6 +234,9 @@ export function SkillsRepositoryPanel() {
         setSaveError(null);
         syncRepository.reset();
         setRemoveConfirmOpen(false);
+      },
+      onError: (error) => {
+        setSaveError(repositoryActionFailureMessage(error));
       },
     });
   };

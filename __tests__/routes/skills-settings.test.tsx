@@ -25,6 +25,7 @@ import { MOCK_DEFAULT_USER_SETTINGS } from "#/mocks/handlers";
 import { Settings, SkillInfo } from "#/types/settings";
 import {
   __resetActiveStoreForTests,
+  getActiveBackend,
   setActiveSelection,
   setRegisteredBackends,
 } from "#/api/backend-registry/active-store";
@@ -1179,6 +1180,28 @@ Full skill body.`,
     expect(screen.queryByTestId("skill-card-review")).not.toBeInTheDocument();
   });
 
+  it("shows a network error when save fails without an error field", async () => {
+    const user = userEvent.setup();
+    const repositoryUrl = "https://github.com/org/skills";
+    mockSkillList([]);
+    vi.spyOn(SkillsRepositoryService, "save").mockRejectedValue(
+      new Error("Failed to fetch"),
+    );
+
+    renderSkillsSettingsScreen();
+
+    const urlField = await screen.findByTestId("skills-repository-url");
+    await user.type(urlField, repositoryUrl);
+    await user.click(screen.getByTestId("skills-repository-save"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("skills-repository-status")).toHaveTextContent(
+        "Failed to fetch",
+      );
+    });
+    expect(urlField).toHaveValue(repositoryUrl);
+  });
+
   it("shows a failed first save until a later save succeeds", async () => {
     const user = userEvent.setup();
     const repositoryUrl = "https://github.com/org/skills";
@@ -1488,6 +1511,7 @@ Full skill body.`,
   it("shows Syncing and refetches while a startup pull is running", async () => {
     const repositoryUrl = "https://github.com/org/skills";
     const updatedSha = "89abcdef0123456789abcdef0123456789abcdef";
+    const reviewSource = `${REPOSITORY_CHECKOUT_PATH}/review/SKILL.md`;
     let fetches = 0;
     const getSpy = vi
       .spyOn(SkillsRepositoryService, "get")
@@ -1504,7 +1528,23 @@ Full skill body.`,
           commit_sha: updatedSha,
         };
       });
-    mockSkillList([]);
+    let catalogFetches = 0;
+    vi.spyOn(SkillsService, "getSkillCatalog").mockImplementation(async () => {
+      catalogFetches += 1;
+      return [
+        buildSkill({
+          name: "review",
+          origin: "user",
+          source: reviewSource,
+          description:
+            catalogFetches === 1
+              ? "Review the change."
+              : "Review the updated change.",
+          triggers: ["review-please"],
+        }),
+      ];
+    });
+    vi.spyOn(SkillsService, "getSkills").mockResolvedValue([]);
 
     vi.useFakeTimers();
     try {
@@ -1515,6 +1555,9 @@ Full skill body.`,
 
       expect(screen.getByTestId("skills-repository-status")).toHaveTextContent(
         "SETTINGS$SKILLS_REPOSITORY_SYNCING",
+      );
+      expect(screen.getByTestId("skill-description-review")).toHaveTextContent(
+        "Review the change.",
       );
       const callsWhileSyncing = getSpy.mock.calls.length;
 
@@ -1535,6 +1578,12 @@ Full skill body.`,
       const status = screen.getByTestId("skills-repository-status");
       expect(status).toHaveTextContent("SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE");
       expect(status).toHaveTextContent("89abcde");
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      expect(screen.getByTestId("skill-description-review")).toHaveTextContent(
+        "Review the updated change.",
+      );
 
       const callsAfterReady = getSpy.mock.calls.length;
       await act(async () => {
@@ -2225,5 +2274,93 @@ Full skill body.`,
     const dialog = await screen.findByRole("dialog");
     await user.click(dialog.firstElementChild as HTMLElement);
     expectRepositoryKept();
+  });
+
+  it("shows a network error and keeps the remove dialog open", async () => {
+    const user = userEvent.setup();
+    const repositoryUrl = "https://github.com/org/skills";
+    vi.spyOn(SkillsRepositoryService, "get").mockResolvedValue(
+      readySkillsRepository(repositoryUrl),
+    );
+    mockSkillList([]);
+    vi.spyOn(SkillsRepositoryService, "remove").mockRejectedValue(
+      new Error("Failed to fetch"),
+    );
+
+    renderSkillsSettingsScreen();
+
+    await screen.findByTestId("skills-repository-url");
+    await user.click(screen.getByTestId("skills-repository-remove"));
+    await user.click(
+      await screen.findByTestId("skills-repository-remove-confirm"),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("skills-repository-status")).toHaveTextContent(
+        "Failed to fetch",
+      );
+    });
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("skills-repository-remove-confirm"),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("skills-repository-url")).toHaveValue(
+      repositoryUrl,
+    );
+  });
+
+  it("shows the newly selected local backend's saved URL", async () => {
+    const user = userEvent.setup();
+    const firstUrl = "https://github.com/org/skills";
+    const typedUrl = "https://github.com/org/typed-skills";
+    const secondUrl = "https://github.com/org/other-skills";
+    __resetActiveStoreForTests();
+    setRegisteredBackends([
+      {
+        id: "local-1",
+        name: "Local one",
+        host: "http://127.0.0.1:3000",
+        apiKey: "key",
+        kind: "local",
+      },
+      {
+        id: "local-2",
+        name: "Local two",
+        host: "http://127.0.0.1:4000",
+        apiKey: "key",
+        kind: "local",
+      },
+    ]);
+    setActiveSelection({ backendId: "local-1", orgId: null });
+    vi.spyOn(SkillsRepositoryService, "get").mockImplementation(async () => {
+      const backendId = getActiveBackend().backend.id;
+      if (backendId === "local-2") return readySkillsRepository(secondUrl);
+      return readySkillsRepository(firstUrl);
+    });
+    mockSkillList([]);
+
+    try {
+      renderSkillsSettingsScreen();
+
+      const urlField = await screen.findByTestId("skills-repository-url");
+      expect(urlField).toHaveValue(firstUrl);
+      await user.clear(urlField);
+      await user.type(urlField, typedUrl);
+      expect(urlField).toHaveValue(typedUrl);
+
+      act(() => {
+        setActiveSelection({ backendId: "local-2", orgId: null });
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId("skills-repository-url")).toHaveValue(
+          secondUrl,
+        );
+      });
+    } finally {
+      window.localStorage.clear();
+      window.sessionStorage.clear();
+      __resetActiveStoreForTests();
+    }
   });
 });
