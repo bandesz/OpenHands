@@ -13,8 +13,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import SkillsSettingsScreen from "#/routes/skills-settings";
 import SettingsService from "#/api/settings-service/settings-service.api";
 import SkillsService from "#/api/skills-service";
+import SkillsRepositoryService from "#/api/skills-repository-service";
 import AgentProfilesService from "#/api/agent-profiles-service/agent-profiles-service.api";
 import { HttpError } from "@openhands/typescript-client";
+import type { SkillsRepository } from "@openhands/typescript-client/clients";
 import {
   ADD_SKILL_DOCS_URL,
   ADD_SKILL_EXAMPLE_COMMAND,
@@ -71,6 +73,33 @@ function buildSettings(overrides: Partial<Settings> = {}): Settings {
 function mockSkillList(skills: SkillInfo[]) {
   vi.spyOn(SkillsService, "getSkills").mockResolvedValue(skills);
   vi.spyOn(SkillsService, "getSkillCatalog").mockResolvedValue(skills);
+}
+
+const REPOSITORY_COMMIT_SHA = "0123456789abcdef0123456789abcdef01234567";
+const REPOSITORY_CHECKOUT_PATH = "/Users/me/.openhands/skills-repository";
+
+function absentSkillsRepository(): SkillsRepository {
+  return {
+    url: null,
+    status: "absent",
+    commit_sha: null,
+    checkout_path: null,
+    container_path: null,
+    error_code: null,
+    error: null,
+  };
+}
+
+function readySkillsRepository(url: string): SkillsRepository {
+  return {
+    url,
+    status: "ready",
+    commit_sha: REPOSITORY_COMMIT_SHA,
+    checkout_path: REPOSITORY_CHECKOUT_PATH,
+    container_path: "/opt/openhands/skills-repository",
+    error_code: null,
+    error: null,
+  };
 }
 
 function buildSkill(overrides: Partial<SkillInfo> = {}): SkillInfo {
@@ -131,6 +160,9 @@ describe("SkillsSettingsScreen", () => {
     // No OpenHands `default`: the page keeps its lists in settings.
     vi.spyOn(AgentProfilesService, "getProfile").mockRejectedValue(
       new HttpError(404, "Not Found", {}, "missing"),
+    );
+    vi.spyOn(SkillsRepositoryService, "get").mockResolvedValue(
+      absentSkillsRepository(),
     );
   });
 
@@ -880,6 +912,128 @@ Full skill body.`,
           disabled_skills: [],
         }),
       ),
+    );
+  });
+
+  it("connects a repository and shows its skills on the same page", async () => {
+    const user = userEvent.setup();
+    const repositoryUrl = "https://github.com/org/skills";
+    const reviewSource = `${REPOSITORY_CHECKOUT_PATH}/review/SKILL.md`;
+    let repository = absentSkillsRepository();
+    let catalog: SkillInfo[] = [];
+    let resolveInitialGet: (value: SkillsRepository) => void = () => {};
+    const initialGet = new Promise<SkillsRepository>((resolve) => {
+      resolveInitialGet = resolve;
+    });
+    let awaitingInitialGet = true;
+    vi.spyOn(SkillsRepositoryService, "get").mockImplementation(() =>
+      awaitingInitialGet ? initialGet : Promise.resolve(repository),
+    );
+    vi.spyOn(SkillsService, "getSkillCatalog").mockImplementation(
+      async () => catalog,
+    );
+    vi.spyOn(SkillsService, "getSkills").mockResolvedValue([]);
+
+    const router = renderSkillsSettingsScreen();
+
+    expect(screen.getByTestId("skills-repository-loading")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("skills-repository-url"),
+    ).not.toBeInTheDocument();
+
+    awaitingInitialGet = false;
+    resolveInitialGet(repository);
+
+    const urlField = await screen.findByTestId("skills-repository-url");
+    const saveButton = screen.getByTestId("skills-repository-save");
+    expect(urlField).toHaveValue("");
+    expect(saveButton).toBeDisabled();
+    expect(
+      screen.queryByTestId("skills-repository-sync"),
+    ).not.toBeInTheDocument();
+
+    await user.type(urlField, repositoryUrl);
+    expect(saveButton).toBeEnabled();
+
+    let resolveSave: () => void = () => {};
+    const saveGate = new Promise<void>((resolve) => {
+      resolveSave = resolve;
+    });
+    const saveSpy = vi
+      .spyOn(SkillsRepositoryService, "save")
+      .mockImplementation(async (url: string) => {
+        await saveGate;
+        repository = readySkillsRepository(url);
+        catalog = [
+          buildSkill({
+            name: "review",
+            origin: "user",
+            source: reviewSource,
+            description: "Review the change.",
+            triggers: ["review-please"],
+          }),
+        ];
+        return repository;
+      });
+
+    await user.click(saveButton);
+
+    expect(saveSpy).toHaveBeenCalledWith(repositoryUrl);
+    expect(screen.getByTestId("skills-repository-status")).toHaveTextContent(
+      "SETTINGS$SKILLS_REPOSITORY_SYNCING",
+    );
+    expect(urlField).toBeDisabled();
+    expect(saveButton).toBeDisabled();
+    expect(screen.queryByTestId("skills-repository-url")).toBeInTheDocument();
+
+    resolveSave();
+
+    const status = await screen.findByTestId("skills-repository-status");
+    await waitFor(() => {
+      expect(status).toHaveTextContent("SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE");
+    });
+    expect(status).toHaveTextContent("0123456");
+    expect(screen.getByTestId("skills-repository-sync")).toBeEnabled();
+    expect(urlField).toHaveValue(repositoryUrl);
+
+    const panel = screen.getByTestId("skills-repository-panel");
+    const card = await screen.findByTestId("skill-card-review");
+    expect(
+      panel.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(within(card).getByTestId("skill-source-review")).toHaveTextContent(
+      reviewSource,
+    );
+    expect(within(card).getByTestId("skill-toggle-review")).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(router.state.location.pathname).toBe("/skills");
+  });
+
+  it("says when a ready repository contains no skill folders", async () => {
+    vi.spyOn(SkillsRepositoryService, "get").mockResolvedValue(
+      readySkillsRepository("https://github.com/org/skills"),
+    );
+    mockSkillList([]);
+
+    renderSkillsSettingsScreen();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("skills-repository-panel")).toHaveTextContent(
+        "SETTINGS$SKILLS_REPOSITORY_NO_SKILLS",
+      );
+    });
+    const panel = screen.getByTestId("skills-repository-panel");
+    const status = within(panel).getByTestId("skills-repository-status");
+    expect(status).toHaveTextContent("SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE");
+    expect(status).toHaveTextContent("0123456");
+    expect(
+      panel.compareDocumentPosition(screen.getByTestId("skills-empty")) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(screen.getByTestId("skills-repository-url")).toHaveValue(
+      "https://github.com/org/skills",
     );
   });
 });

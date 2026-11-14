@@ -23,6 +23,7 @@ import {
   type SkillFacetGroupId,
   type SkillFilterState,
 } from "#/components/features/skills/skill-filter";
+import { SkillsRepositoryPanel } from "#/components/features/skills/skills-repository-panel";
 import { SkillsToolbar } from "#/components/features/skills/skills-toolbar";
 import { useActiveBackend } from "#/contexts/active-backend-context";
 import { useSettings } from "#/hooks/query/use-settings";
@@ -186,6 +187,8 @@ function SkillsSettingsScreen() {
               {t(I18nKey.SETTINGS$SKILLS_ADD_BUTTON)}
             </BrandButton>
           </div>
+
+          <SkillsRepositoryPanel />
 
           {isLoading ? (
             <div className="flex flex-col gap-4">
