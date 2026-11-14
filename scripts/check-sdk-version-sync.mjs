@@ -44,7 +44,7 @@
  */
 
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import process from "node:process";
 
@@ -204,13 +204,37 @@ function findClientPinMismatch(pinnedVersion, expectedVersion) {
 }
 
 /**
- * Read the typescript-client pin from package.json.
+ * Turn a dependency specifier into the version the sync check compares.
+ * A file: target uses the version field of that package's package.json,
+ * relative to the package that declares the dependency. A missing manifest
+ * is null, so the mismatch check fails instead of throwing. Any other
+ * specifier is returned unchanged.
+ */
+function resolveClientPin(specifier, baseDir = projectRoot) {
+  if (specifier == null) return null;
+  if (!specifier.startsWith("file:")) return specifier;
+
+  const target = specifier.slice("file:".length);
+  const packageDir = isAbsolute(target) ? target : resolve(baseDir, target);
+  try {
+    const manifest = JSON.parse(
+      readFileSync(join(packageDir, "package.json"), "utf-8"),
+    );
+    return typeof manifest.version === "string" ? manifest.version : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read the typescript-client pin from package.json and resolve file: targets
+ * to the linked package version.
  */
 function readClientPin() {
   const pkg = JSON.parse(
     readFileSync(join(projectRoot, "package.json"), "utf-8"),
   );
-  return pkg.dependencies?.[CLIENT_PACKAGE_NAME] ?? null;
+  return resolveClientPin(pkg.dependencies?.[CLIENT_PACKAGE_NAME] ?? null);
 }
 
 /**
@@ -491,6 +515,7 @@ export {
   versionsEqual,
   parseSdkVersionsFromRequiresDist,
   findClientPinMismatch,
+  resolveClientPin,
   readClientPin,
   SDK_PACKAGES,
   CLIENT_PACKAGE_NAME,

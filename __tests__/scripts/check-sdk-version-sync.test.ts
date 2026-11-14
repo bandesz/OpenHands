@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Type definitions for the module exports
@@ -8,6 +11,10 @@ type FindClientPinMismatch = (
   pinned: string | null,
   expected: string,
 ) => { package: string; expected: string; actual: string | null } | null;
+type ResolveClientPin = (
+  specifier: string | null,
+  baseDir?: string,
+) => string | null;
 type ReadClientPin = () => string | null;
 
 // Import after mocking - need dynamic import since the script has side effects
@@ -17,6 +24,7 @@ describe("check-sdk-version-sync helpers", () => {
   let parseSdkVersionsFromRequiresDist: ParseSdkVersions;
   let SDK_PACKAGES: string[];
   let findClientPinMismatch: FindClientPinMismatch;
+  let resolveClientPin: ResolveClientPin;
   let readClientPin: ReadClientPin;
   let CLIENT_PACKAGE_NAME: string;
 
@@ -37,6 +45,7 @@ describe("check-sdk-version-sync helpers", () => {
     SDK_PACKAGES = module.SDK_PACKAGES as string[];
     findClientPinMismatch =
       module.findClientPinMismatch as FindClientPinMismatch;
+    resolveClientPin = module.resolveClientPin as ResolveClientPin;
     readClientPin = module.readClientPin as ReadClientPin;
     CLIENT_PACKAGE_NAME = module.CLIENT_PACKAGE_NAME as string;
   });
@@ -202,9 +211,94 @@ describe("check-sdk-version-sync helpers", () => {
     });
   });
 
+  describe("resolveClientPin", () => {
+    let tempRoot: string;
+    let canvasDir: string;
+
+    beforeEach(() => {
+      tempRoot = mkdtempSync(join(tmpdir(), "client-pin-"));
+      canvasDir = join(tempRoot, "OpenHands");
+      mkdirSync(canvasDir);
+    });
+
+    afterEach(() => {
+      rmSync(tempRoot, { recursive: true, force: true });
+    });
+
+    function writeClientPackage(version: string) {
+      const clientDir = join(
+        tempRoot,
+        "software-agent-sdk",
+        "clients",
+        "typescript",
+      );
+      mkdirSync(clientDir, { recursive: true });
+      writeFileSync(
+        join(clientDir, "package.json"),
+        JSON.stringify({
+          name: "@openhands/typescript-client",
+          version,
+        }),
+      );
+    }
+
+    it("resolves a file: dependency to that package's version", () => {
+      writeClientPackage("1.62.0");
+
+      expect(
+        resolveClientPin(
+          "file:../software-agent-sdk/clients/typescript",
+          canvasDir,
+        ),
+      ).toBe("1.62.0");
+    });
+
+    it("leaves a semver pin unchanged", () => {
+      expect(resolveClientPin("1.62.0", canvasDir)).toBe("1.62.0");
+    });
+
+    it("fails the mismatch check when the file: package version differs", () => {
+      writeClientPackage("9.9.9");
+
+      expect(
+        findClientPinMismatch(
+          resolveClientPin(
+            "file:../software-agent-sdk/clients/typescript",
+            canvasDir,
+          ),
+          "1.62.0",
+        ),
+      ).toEqual({
+        package: CLIENT_PACKAGE_NAME,
+        expected: "1.62.0",
+        actual: "9.9.9",
+      });
+    });
+
+    it("reports a missing file: package.json as a mismatch without throwing", () => {
+      let resolved: string | null = "unset";
+
+      expect(() => {
+        resolved = resolveClientPin(
+          "file:../software-agent-sdk/clients/typescript",
+          canvasDir,
+        );
+      }).not.toThrow();
+      expect(findClientPinMismatch(resolved, "1.62.0")).toEqual({
+        package: CLIENT_PACKAGE_NAME,
+        expected: "1.62.0",
+        actual: null,
+      });
+    });
+  });
+
   describe("readClientPin", () => {
     it("reads an exact pin this repo actually ships", () => {
-      expect(readClientPin()).toMatch(/^[0-9]+\.[0-9]+\.[0-9]+$/);
+      expect(readClientPin()).toBe("1.62.0");
+    });
+
+    it("matches versions.agentServer for the shipped file: pin", () => {
+      expect(findClientPinMismatch(readClientPin(), "1.62.0")).toBeNull();
     });
   });
 });
