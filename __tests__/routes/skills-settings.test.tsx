@@ -1346,6 +1346,76 @@ Full skill body.`,
     expect(getSpy).toHaveBeenCalledTimes(getsBeforeSave);
   });
 
+  it("shows the replacement repository when a replacement save succeeds", async () => {
+    const user = userEvent.setup();
+    const urlA = "https://github.com/org/skills";
+    const urlB = "https://github.com/org/other-skills";
+    const repositoryBSha = "89abcdef0123456789abcdef0123456789abcdef";
+    const reviewSource = `${REPOSITORY_CHECKOUT_PATH}/review/SKILL.md`;
+    const lintSource = `${REPOSITORY_CHECKOUT_PATH}/lint/SKILL.md`;
+    let repository = readySkillsRepository(urlA);
+    let catalog = [
+      buildSkill({
+        name: "review",
+        origin: "user",
+        source: reviewSource,
+        description: "Review the change.",
+        triggers: ["review-please"],
+      }),
+    ];
+    vi.spyOn(SkillsRepositoryService, "get").mockImplementation(() =>
+      Promise.resolve(repository),
+    );
+    vi.spyOn(SkillsService, "getSkillCatalog").mockImplementation(
+      async () => catalog,
+    );
+    vi.spyOn(SkillsService, "getSkills").mockResolvedValue([]);
+    vi.spyOn(SkillsRepositoryService, "save").mockImplementation(
+      async (url: string) => {
+        repository = {
+          ...readySkillsRepository(url),
+          commit_sha: repositoryBSha,
+        };
+        catalog = [
+          buildSkill({
+            name: "lint",
+            origin: "user",
+            source: lintSource,
+            description: "Lint the change.",
+            triggers: ["lint-please"],
+          }),
+        ];
+        return repository;
+      },
+    );
+
+    renderSkillsSettingsScreen();
+
+    const urlField = await screen.findByTestId("skills-repository-url");
+    expect(urlField).toHaveValue(urlA);
+    const cardA = await screen.findByTestId("skill-card-review");
+    expect(within(cardA).getByTestId("skill-source-review")).toHaveTextContent(
+      reviewSource,
+    );
+
+    await user.clear(urlField);
+    await user.type(urlField, urlB);
+    await user.click(screen.getByTestId("skills-repository-save"));
+
+    await waitFor(() => {
+      const status = screen.getByTestId("skills-repository-status");
+      expect(status).toHaveTextContent("SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE");
+      expect(status).toHaveTextContent("89abcde");
+      expect(status).not.toHaveTextContent("0123456");
+    });
+    expect(urlField).toHaveValue(urlB);
+    expect(screen.queryByTestId("skill-card-review")).not.toBeInTheDocument();
+    const cardB = screen.getByTestId("skill-card-lint");
+    expect(within(cardB).getByTestId("skill-source-lint")).toHaveTextContent(
+      lintSource,
+    );
+  });
+
   it("syncs a repository and shows the updated review description", async () => {
     const user = userEvent.setup();
     const repositoryUrl = "https://github.com/org/skills";
