@@ -1036,4 +1036,209 @@ Full skill body.`,
       "https://github.com/org/skills",
     );
   });
+
+  it("keeps save disabled until the URL is an http, https, or ssh git URL", async () => {
+    const user = userEvent.setup();
+    mockSkillList([]);
+
+    renderSkillsSettingsScreen();
+
+    const urlField = await screen.findByTestId("skills-repository-url");
+    const saveButton = screen.getByTestId("skills-repository-save");
+    expect(saveButton).toBeDisabled();
+    expect(urlField).toHaveAccessibleDescription(
+      "SETTINGS$SKILLS_REPOSITORY_INVALID_URL",
+    );
+
+    await user.type(urlField, "not a url");
+    expect(saveButton).toBeDisabled();
+    expect(urlField).toHaveAccessibleDescription(
+      "SETTINGS$SKILLS_REPOSITORY_INVALID_URL",
+    );
+
+    await user.clear(urlField);
+    await user.type(urlField, "https://github.com/org/skills");
+    expect(saveButton).toBeEnabled();
+    expect(urlField).not.toHaveAccessibleDescription(
+      "SETTINGS$SKILLS_REPOSITORY_INVALID_URL",
+    );
+
+    await user.clear(urlField);
+    await user.type(urlField, "git@github.com:org/skills.git");
+    expect(saveButton).toBeEnabled();
+    expect(urlField).not.toHaveAccessibleDescription(
+      "SETTINGS$SKILLS_REPOSITORY_INVALID_URL",
+    );
+
+    await user.clear(urlField);
+    await user.type(urlField, "ssh://git@github.com/org/skills.git");
+    expect(saveButton).toBeEnabled();
+  });
+
+  it("shows a failed first save until a later save succeeds", async () => {
+    const user = userEvent.setup();
+    const repositoryUrl = "https://github.com/org/skills";
+    const serverError =
+      "Authentication failed for https://github.com/org/skills";
+    const reviewSource = `${REPOSITORY_CHECKOUT_PATH}/review/SKILL.md`;
+    let repository = absentSkillsRepository();
+    let catalog: SkillInfo[] = [];
+    const getSpy = vi
+      .spyOn(SkillsRepositoryService, "get")
+      .mockImplementation(() => Promise.resolve(repository));
+    const catalogSpy = vi
+      .spyOn(SkillsService, "getSkillCatalog")
+      .mockImplementation(async () => catalog);
+    vi.spyOn(SkillsService, "getSkills").mockResolvedValue([]);
+    const saveSpy = vi
+      .spyOn(SkillsRepositoryService, "save")
+      .mockRejectedValueOnce(
+        Object.assign(new Error("HTTP 422"), {
+          error: serverError,
+          error_code: "git_failed",
+        }),
+      );
+
+    renderSkillsSettingsScreen();
+
+    const urlField = await screen.findByTestId("skills-repository-url");
+    await user.type(urlField, repositoryUrl);
+    const getsBeforeSave = getSpy.mock.calls.length;
+    const catalogsBeforeSave = catalogSpy.mock.calls.length;
+
+    await user.click(screen.getByTestId("skills-repository-save"));
+
+    const status = await screen.findByTestId("skills-repository-status");
+    expect(status).toHaveTextContent(serverError);
+    expect(status).not.toHaveTextContent(
+      "SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE",
+    );
+    expect(urlField).toHaveValue(repositoryUrl);
+    expect(screen.queryByTestId("skill-card-review")).not.toBeInTheDocument();
+    expect(getSpy).toHaveBeenCalledTimes(getsBeforeSave);
+    expect(catalogSpy).toHaveBeenCalledTimes(catalogsBeforeSave);
+    expect(saveSpy).toHaveBeenCalledTimes(1);
+
+    saveSpy.mockImplementation(async (url: string) => {
+      repository = readySkillsRepository(url);
+      catalog = [
+        buildSkill({
+          name: "review",
+          origin: "user",
+          source: reviewSource,
+          description: "Review the change.",
+          triggers: ["review-please"],
+        }),
+      ];
+      return repository;
+    });
+    await user.click(screen.getByTestId("skills-repository-save"));
+
+    await waitFor(() => {
+      const savedStatus = screen.getByTestId("skills-repository-status");
+      expect(savedStatus).toHaveTextContent(
+        "SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE",
+      );
+      expect(savedStatus).not.toHaveTextContent(serverError);
+      expect(savedStatus).toHaveTextContent("0123456");
+    });
+    expect(urlField).toHaveValue(repositoryUrl);
+    expect(
+      within(await screen.findByTestId("skill-card-review")).getByTestId(
+        "skill-source-review",
+      ),
+    ).toHaveTextContent(reviewSource);
+  });
+
+  it("clears a failed first save when the URL is edited", async () => {
+    const user = userEvent.setup();
+    const repositoryUrl = "https://github.com/org/skills";
+    const serverError = "Repository not found";
+    mockSkillList([]);
+    vi.spyOn(SkillsRepositoryService, "save").mockRejectedValue(
+      Object.assign(new Error("HTTP 422"), {
+        error: serverError,
+        error_code: "git_failed",
+      }),
+    );
+
+    renderSkillsSettingsScreen();
+
+    const urlField = await screen.findByTestId("skills-repository-url");
+    await user.type(urlField, repositoryUrl);
+    await user.click(screen.getByTestId("skills-repository-save"));
+
+    expect(
+      await screen.findByTestId("skills-repository-status"),
+    ).toHaveTextContent(serverError);
+
+    await user.type(urlField, "x");
+
+    expect(screen.queryByText(serverError)).not.toBeInTheDocument();
+    expect(urlField).toHaveValue(`${repositoryUrl}x`);
+    expect(screen.queryByTestId("skill-card-review")).not.toBeInTheDocument();
+  });
+
+  it("keeps the connected repository when a replacement save fails", async () => {
+    const user = userEvent.setup();
+    const urlA = "https://github.com/org/skills";
+    const urlB = "https://github.com/org/other-skills";
+    const serverError = "Could not clone https://github.com/org/other-skills";
+    const reviewSource = `${REPOSITORY_CHECKOUT_PATH}/review/SKILL.md`;
+    const getSpy = vi
+      .spyOn(SkillsRepositoryService, "get")
+      .mockResolvedValue(readySkillsRepository(urlA));
+    const catalogSpy = vi
+      .spyOn(SkillsService, "getSkillCatalog")
+      .mockResolvedValue([
+        buildSkill({
+          name: "review",
+          origin: "user",
+          source: reviewSource,
+          description: "Review the change.",
+          triggers: ["review-please"],
+        }),
+      ]);
+    vi.spyOn(SkillsService, "getSkills").mockResolvedValue([]);
+    vi.spyOn(SkillsRepositoryService, "save").mockRejectedValue(
+      Object.assign(new Error("HTTP 422"), {
+        error: serverError,
+        error_code: "git_failed",
+      }),
+    );
+
+    renderSkillsSettingsScreen();
+
+    const urlField = await screen.findByTestId("skills-repository-url");
+    expect(urlField).toHaveValue(urlA);
+    const card = await screen.findByTestId("skill-card-review");
+    expect(within(card).getByTestId("skill-source-review")).toHaveTextContent(
+      reviewSource,
+    );
+    const getsBeforeSave = getSpy.mock.calls.length;
+    const catalogsBeforeSave = catalogSpy.mock.calls.length;
+
+    await user.clear(urlField);
+    await user.type(urlField, urlB);
+    await user.click(screen.getByTestId("skills-repository-save"));
+
+    const status = await screen.findByTestId("skills-repository-status");
+    expect(status).toHaveTextContent(serverError);
+    expect(status).toHaveTextContent("SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE");
+    expect(status).toHaveTextContent("0123456");
+    expect(urlField).toHaveValue(urlB);
+    expect(within(card).getByTestId("skill-source-review")).toHaveTextContent(
+      reviewSource,
+    );
+    expect(getSpy).toHaveBeenCalledTimes(getsBeforeSave);
+    expect(catalogSpy).toHaveBeenCalledTimes(catalogsBeforeSave);
+
+    await user.type(urlField, "x");
+    expect(status).not.toHaveTextContent(serverError);
+    expect(status).toHaveTextContent("SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE");
+    expect(status).toHaveTextContent("0123456");
+    expect(urlField).toHaveValue(`${urlB}x`);
+    expect(screen.getByTestId("skill-card-review")).toBeInTheDocument();
+    expect(getSpy).toHaveBeenCalledTimes(getsBeforeSave);
+  });
 });

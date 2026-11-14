@@ -21005,6 +21005,24 @@
     "ca": "URL del repositori",
     "id": "URL repositori"
   },
+  "SETTINGS$SKILLS_REPOSITORY_INVALID_URL": {
+    "en": "Enter an http, https, or ssh git URL.",
+    "ja": "Enter an http, https, or ssh git URL.",
+    "zh-CN": "Enter an http, https, or ssh git URL.",
+    "zh-TW": "Enter an http, https, or ssh git URL.",
+    "ko-KR": "Enter an http, https, or ssh git URL.",
+    "no": "Enter an http, https, or ssh git URL.",
+    "ar": "Enter an http, https, or ssh git URL.",
+    "de": "Enter an http, https, or ssh git URL.",
+    "fr": "Enter an http, https, or ssh git URL.",
+    "it": "Enter an http, https, or ssh git URL.",
+    "pt": "Enter an http, https, or ssh git URL.",
+    "es": "Enter an http, https, or ssh git URL.",
+    "tr": "Enter an http, https, or ssh git URL.",
+    "uk": "Enter an http, https, or ssh git URL.",
+    "ca": "Enter an http, https, or ssh git URL.",
+    "id": "Enter an http, https, or ssh git URL."
+  },
   "SETTINGS$SKILLS_REPOSITORY_SYNCING": {
     "en": "Syncing…",
     "ja": "同期しています…",

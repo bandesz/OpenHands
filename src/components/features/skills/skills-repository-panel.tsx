@@ -11,6 +11,31 @@ import { formControlFieldClassName } from "#/utils/form-control-classes";
 import { cn } from "#/utils/utils";
 
 const SKILLS_REPOSITORY_URL_INPUT_ID = "skills-repository-url";
+const SKILLS_REPOSITORY_URL_ERROR_ID = "skills-repository-url-error";
+const SCP_GIT_URL = /^git@[^/\s:]+:[^\s]+$/;
+
+function isSkillsRepositoryGitUrl(value: string): boolean {
+  if (value.length === 0 || /\s/u.test(value)) return false;
+  if (SCP_GIT_URL.test(value)) return true;
+  try {
+    const parsed = new URL(value);
+    const allowedScheme =
+      parsed.protocol === "http:" ||
+      parsed.protocol === "https:" ||
+      parsed.protocol === "ssh:";
+    return allowedScheme && parsed.hostname.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+function skillsRepositorySaveError(error: unknown): string | null {
+  if (typeof error !== "object" || error === null || !("error" in error)) {
+    return null;
+  }
+  const message = error.error;
+  return typeof message === "string" && message.length > 0 ? message : null;
+}
 
 function sourceIsInCheckout(
   source: string | null | undefined,
@@ -29,6 +54,7 @@ export function SkillsRepositoryPanel() {
   const saveRepository = useSaveSkillsRepository();
   const repository = repositoryQuery.data;
   const [draftUrl, setDraftUrl] = React.useState<string | null>(null);
+  const [saveError, setSaveError] = React.useState<string | null>(null);
   const url = draftUrl ?? repository?.url ?? "";
 
   if (!repository) {
@@ -44,7 +70,9 @@ export function SkillsRepositoryPanel() {
 
   const isSaving = saveRepository.isPending;
   const trimmedUrl = url.trim();
-  const canSave = trimmedUrl.length > 0 && !isSaving;
+  const urlIsValid = isSkillsRepositoryGitUrl(trimmedUrl);
+  const canSave = urlIsValid && !isSaving;
+  const displayedSaveError = isSaving ? null : saveError;
   const shortSha = repository.commit_sha?.slice(0, 7) ?? "";
   const showReadyStatus = !isSaving && repository.status === "ready";
   const hasRepositorySkills =
@@ -61,8 +89,19 @@ export function SkillsRepositoryPanel() {
     event.preventDefault();
     if (!canSave) return;
     saveRepository.mutate(trimmedUrl, {
-      onSuccess: () => setDraftUrl(null),
+      onSuccess: () => {
+        setDraftUrl(null);
+        setSaveError(null);
+      },
+      onError: (error) => {
+        setSaveError(skillsRepositorySaveError(error));
+      },
     });
+  };
+
+  const handleUrlChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setDraftUrl(event.target.value);
+    setSaveError(null);
   };
 
   return (
@@ -80,7 +119,11 @@ export function SkillsRepositoryPanel() {
             disabled={isSaving}
             autoComplete="off"
             spellCheck={false}
-            onChange={(event) => setDraftUrl(event.target.value)}
+            aria-invalid={!urlIsValid}
+            aria-describedby={
+              urlIsValid ? undefined : SKILLS_REPOSITORY_URL_ERROR_ID
+            }
+            onChange={handleUrlChange}
             className={cn(formControlFieldClassName, "min-w-0 flex-1")}
           />
           <BrandButton
@@ -104,19 +147,33 @@ export function SkillsRepositoryPanel() {
             </BrandButton>
           ) : null}
         </div>
-        {isSaving || showReadyStatus ? (
+        {urlIsValid ? null : (
+          <p
+            id={SKILLS_REPOSITORY_URL_ERROR_ID}
+            className="text-sm text-danger"
+          >
+            {t(I18nKey.SETTINGS$SKILLS_REPOSITORY_INVALID_URL)}
+          </p>
+        )}
+        {isSaving || showReadyStatus || displayedSaveError ? (
           <p
             data-testid="skills-repository-status"
             className="text-sm text-tertiary-light"
           >
-            {isSaving
-              ? t(I18nKey.SETTINGS$SKILLS_REPOSITORY_SYNCING)
-              : t(I18nKey.SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE)}
-            {showReadyStatus && shortSha ? (
+            {isSaving ? t(I18nKey.SETTINGS$SKILLS_REPOSITORY_SYNCING) : null}
+            {showReadyStatus ? (
               <>
-                {" "}
-                <span className="font-mono">{shortSha}</span>
+                {t(I18nKey.SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE)}
+                {shortSha ? (
+                  <>
+                    {" "}
+                    <span className="font-mono">{shortSha}</span>
+                  </>
+                ) : null}
               </>
+            ) : null}
+            {displayedSaveError ? (
+              <span className="block text-danger">{displayedSaveError}</span>
             ) : null}
           </p>
         ) : null}
