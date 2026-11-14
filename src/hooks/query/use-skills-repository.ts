@@ -63,3 +63,22 @@ export function useSyncSkillsRepository() {
     meta: { disableToast: true },
   });
 }
+
+export function useRemoveSkillsRepository() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => SkillsRepositoryService.remove(),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: SKILLS_REPOSITORY_QUERY_KEYS.all,
+        }),
+        queryClient.invalidateQueries({
+          queryKey: SKILL_CATALOG_QUERY_KEYS.all,
+        }),
+      ]);
+    },
+    meta: { disableToast: true },
+  });
+}

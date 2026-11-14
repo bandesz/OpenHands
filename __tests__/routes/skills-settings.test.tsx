@@ -1915,4 +1915,166 @@ Full skill body.`,
       ),
     ).toHaveAttribute("aria-checked", "true");
   });
+
+  it("removes the repository after confirmation and keeps the hand-written skill", async () => {
+    const user = userEvent.setup();
+    const repositoryUrl = "https://github.com/org/skills";
+    const handwrittenSource = "~/.agents/skills/review/SKILL.md";
+    const shadowedSource = `${REPOSITORY_CHECKOUT_PATH}/review/SKILL.md`;
+    const loadedSource = `${REPOSITORY_CHECKOUT_PATH}/lint/SKILL.md`;
+    const handwritten = buildSkill({
+      name: "review",
+      origin: "user",
+      source: handwrittenSource,
+      description: "Hand-written review notes.",
+      triggers: ["review-please"],
+      availability: "loaded",
+    });
+    let repository = readySkillsRepository(repositoryUrl);
+    let catalog = [
+      handwritten,
+      buildSkill({
+        name: "review",
+        origin: "user",
+        source: shadowedSource,
+        description: "Repository review notes.",
+        triggers: ["review-please"],
+        availability: "shadowed",
+        shadow_reason: "handwritten",
+      }),
+      buildSkill({
+        name: "lint",
+        origin: "user",
+        source: loadedSource,
+        description: "Repository lint notes.",
+        triggers: ["lint"],
+        availability: "loaded",
+      }),
+    ];
+    vi.spyOn(SkillsRepositoryService, "get").mockImplementation(() =>
+      Promise.resolve(repository),
+    );
+    vi.spyOn(SkillsService, "getSkillCatalog").mockImplementation(
+      async () => catalog,
+    );
+    vi.spyOn(SkillsService, "getSkills").mockResolvedValue([]);
+    const removeSpy = vi
+      .spyOn(SkillsRepositoryService, "remove")
+      .mockImplementation(async () => {
+        repository = absentSkillsRepository();
+        catalog = [handwritten];
+      });
+
+    renderSkillsSettingsScreen();
+
+    const urlField = await screen.findByTestId("skills-repository-url");
+    expect(urlField).toHaveValue(repositoryUrl);
+    expect(screen.getByTestId("skill-card-review")).toBeInTheDocument();
+    expect(screen.getByTestId("skill-not-loaded-review")).toBeInTheDocument();
+    expect(screen.getByTestId("skill-card-lint")).toBeInTheDocument();
+
+    await user.click(screen.getByTestId("skills-repository-remove"));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent(
+      "SETTINGS$SKILLS_REPOSITORY_REMOVE_TITLE",
+    );
+    expect(dialog).toHaveTextContent("SETTINGS$SKILLS_REPOSITORY_REMOVE_BODY");
+    expect(
+      screen.getByTestId("skills-repository-remove-confirm"),
+    ).toHaveTextContent("COMMON$REMOVE");
+
+    await user.click(screen.getByTestId("skills-repository-remove-confirm"));
+
+    await waitFor(() => {
+      expect(removeSpy).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId("skills-repository-url")).toHaveValue("");
+    });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("skills-repository-status"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("skill-not-loaded-review"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("skill-card-lint")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("skills-repository-remove"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("skill-card-review")).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("skill-card-review")).getByTestId(
+        "skill-source-review",
+      ),
+    ).toHaveTextContent("~/.agents/skills/review/");
+  });
+
+  it("leaves the URL and skill cards in place when remove is dismissed", async () => {
+    const user = userEvent.setup();
+    const repositoryUrl = "https://github.com/org/skills";
+    vi.spyOn(SkillsRepositoryService, "get").mockResolvedValue(
+      readySkillsRepository(repositoryUrl),
+    );
+    mockSkillList([
+      buildSkill({
+        name: "review",
+        origin: "user",
+        source: "~/.agents/skills/review/SKILL.md",
+        description: "Hand-written review notes.",
+        availability: "loaded",
+      }),
+      buildSkill({
+        name: "review",
+        origin: "user",
+        source: `${REPOSITORY_CHECKOUT_PATH}/review/SKILL.md`,
+        description: "Repository review notes.",
+        availability: "shadowed",
+        shadow_reason: "handwritten",
+      }),
+      buildSkill({
+        name: "lint",
+        origin: "user",
+        source: `${REPOSITORY_CHECKOUT_PATH}/lint/SKILL.md`,
+        description: "Repository lint notes.",
+        availability: "loaded",
+      }),
+    ]);
+    const removeSpy = vi
+      .spyOn(SkillsRepositoryService, "remove")
+      .mockResolvedValue(undefined);
+
+    renderSkillsSettingsScreen();
+
+    const urlField = await screen.findByTestId("skills-repository-url");
+    expect(urlField).toHaveValue(repositoryUrl);
+    await screen.findByTestId("skill-not-loaded-review");
+
+    const expectRepositoryKept = () => {
+      expect(removeSpy).not.toHaveBeenCalled();
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(urlField).toHaveValue(repositoryUrl);
+      expect(screen.getByTestId("skill-card-review")).toBeInTheDocument();
+      expect(screen.getByTestId("skill-not-loaded-review")).toBeInTheDocument();
+      expect(screen.getByTestId("skill-card-lint")).toBeInTheDocument();
+      expect(screen.getByTestId("skills-repository-status")).toHaveTextContent(
+        "SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE",
+      );
+    };
+
+    await user.click(screen.getByTestId("skills-repository-remove"));
+    await user.click(
+      await screen.findByTestId("skills-repository-remove-cancel"),
+    );
+    expectRepositoryKept();
+
+    await user.click(screen.getByTestId("skills-repository-remove"));
+    await screen.findByRole("dialog");
+    await user.keyboard("{Escape}");
+    expectRepositoryKept();
+
+    await user.click(screen.getByTestId("skills-repository-remove"));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(dialog.firstElementChild as HTMLElement);
+    expectRepositoryKept();
+  });
 });

@@ -1,14 +1,21 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
 import { BrandButton } from "#/components/features/settings/brand-button";
+import { ModalBackdrop } from "#/components/shared/modals/modal-backdrop";
+import {
+  MODAL_MAX_WIDTH_VIEWPORT,
+  modalWidthClassName,
+} from "#/components/shared/modals/modal-body";
 import { useSkillCatalog } from "#/hooks/query/use-skill-catalog";
 import {
+  useRemoveSkillsRepository,
   useSaveSkillsRepository,
   useSkillsRepository,
   useSyncSkillsRepository,
 } from "#/hooks/query/use-skills-repository";
 import { I18nKey } from "#/i18n/declaration";
 import { formControlFieldClassName } from "#/utils/form-control-classes";
+import { modalTitleLgMediumClassName } from "#/utils/modal-classes";
 import { cn } from "#/utils/utils";
 
 const SKILLS_REPOSITORY_URL_INPUT_ID = "skills-repository-url";
@@ -118,9 +125,11 @@ export function SkillsRepositoryPanel() {
   const catalog = useSkillCatalog();
   const saveRepository = useSaveSkillsRepository();
   const syncRepository = useSyncSkillsRepository();
+  const removeRepository = useRemoveSkillsRepository();
   const repository = repositoryQuery.data;
   const [draftUrl, setDraftUrl] = React.useState<string | null>(null);
   const [saveError, setSaveError] = React.useState<string | null>(null);
+  const [removeConfirmOpen, setRemoveConfirmOpen] = React.useState(false);
   const url = draftUrl ?? repository?.url ?? "";
 
   if (!repository) {
@@ -204,6 +213,21 @@ export function SkillsRepositoryPanel() {
     setSaveError(null);
   };
 
+  const closeRemoveDialog = () => setRemoveConfirmOpen(false);
+
+  const handleConfirmRemove = () => {
+    removeRepository.mutate(undefined, {
+      onSuccess: () => {
+        setDraftUrl(null);
+        setSaveError(null);
+        setRemoveConfirmOpen(false);
+      },
+    });
+  };
+
+  const hasSavedRepository = (repository.url ?? "").length > 0;
+  const removeTitle = t(I18nKey.SETTINGS$SKILLS_REPOSITORY_REMOVE_TITLE);
+
   return (
     <div data-testid="skills-repository-panel" className="flex flex-col gap-3">
       <form onSubmit={handleSubmit} className="flex min-w-0 flex-col gap-3">
@@ -251,6 +275,17 @@ export function SkillsRepositoryPanel() {
               }}
             >
               {t(I18nKey.SETTINGS$SKILLS_REPOSITORY_SYNC)}
+            </BrandButton>
+          ) : null}
+          {hasSavedRepository ? (
+            <BrandButton
+              type="button"
+              variant="secondary"
+              testId="skills-repository-remove"
+              className="shrink-0"
+              onClick={() => setRemoveConfirmOpen(true)}
+            >
+              {t(I18nKey.COMMON$REMOVE)}
             </BrandButton>
           ) : null}
         </div>
@@ -307,6 +342,42 @@ export function SkillsRepositoryPanel() {
           </p>
         ) : null}
       </form>
+      {removeConfirmOpen ? (
+        <ModalBackdrop onClose={closeRemoveDialog} aria-label={removeTitle}>
+          <div
+            className={cn(
+              "relative flex flex-col gap-4 rounded-xl border border-border bg-base-secondary p-6",
+              modalWidthClassName("sm"),
+              MODAL_MAX_WIDTH_VIEWPORT,
+            )}
+          >
+            <h2 className={modalTitleLgMediumClassName}>{removeTitle}</h2>
+            <p className="text-sm text-muted">
+              {t(I18nKey.SETTINGS$SKILLS_REPOSITORY_REMOVE_BODY)}
+            </p>
+            <div className="flex justify-end gap-2">
+              <BrandButton
+                type="button"
+                variant="secondary"
+                testId="skills-repository-remove-cancel"
+                isDisabled={removeRepository.isPending}
+                onClick={closeRemoveDialog}
+              >
+                {t(I18nKey.BUTTON$CANCEL)}
+              </BrandButton>
+              <BrandButton
+                type="button"
+                variant="danger"
+                testId="skills-repository-remove-confirm"
+                isDisabled={removeRepository.isPending}
+                onClick={handleConfirmRemove}
+              >
+                {t(I18nKey.COMMON$REMOVE)}
+              </BrandButton>
+            </div>
+          </div>
+        </ModalBackdrop>
+      ) : null}
     </div>
   );
 }
