@@ -1729,6 +1729,62 @@ Full skill body.`,
     expect(screen.getAllByTestId("skill-card-review")).toHaveLength(1);
   });
 
+  it("does not turn the loaded skill off from a shadowed card or its modal", async () => {
+    const user = userEvent.setup();
+    const handwrittenSource = "~/.agents/skills/review/SKILL.md";
+    const checkoutSource = `${REPOSITORY_CHECKOUT_PATH}/review/SKILL.md`;
+    vi.spyOn(SkillsRepositoryService, "get").mockResolvedValue(
+      readySkillsRepository("https://github.com/org/skills"),
+    );
+    mockSkillList([
+      buildSkill({
+        name: "review",
+        origin: "user",
+        source: handwrittenSource,
+        description: "Hand-written review notes.",
+        availability: "loaded",
+      }),
+      buildSkill({
+        name: "review",
+        origin: "user",
+        source: checkoutSource,
+        description: "Repository review notes.",
+        availability: "shadowed",
+        shadow_reason: "handwritten",
+      }),
+    ]);
+    const saveSpy = vi
+      .spyOn(SettingsService, "saveSettings")
+      .mockResolvedValue(true);
+
+    renderSkillsSettingsScreen();
+
+    const handwritten = await screen.findByTestId("skill-card-review");
+    const shadowed = screen.getByTestId("skill-not-loaded-review");
+    expect(within(shadowed).getByTestId("skill-toggle-review")).toBeDisabled();
+
+    await user.click(within(shadowed).getByTestId("skill-name-review"));
+
+    const modal = await screen.findByTestId("skill-detail-modal");
+    const modalToggle = within(modal).getByTestId("skill-modal-toggle-review");
+    expect(modalToggle).toBeDisabled();
+
+    fireEvent.change(modalToggle, { target: { checked: false } });
+
+    expect(
+      within(modal).getByText("SETTINGS$SKILLS_ENABLED"),
+    ).toBeInTheDocument();
+    expect(
+      within(handwritten).getByTestId("skill-toggle-review"),
+    ).toHaveAttribute("aria-checked", "true");
+    expect(saveSpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        disabled_skills: expect.arrayContaining(["review"]),
+      }),
+    );
+    expect(updateDefaultAgentProfileMock).not.toHaveBeenCalled();
+  });
+
   it("shows a duplicate repository skill name as not loaded", async () => {
     const loadedSource = `${REPOSITORY_CHECKOUT_PATH}/alpha/SKILL.md`;
     const duplicateSource = `${REPOSITORY_CHECKOUT_PATH}/zeta/SKILL.md`;

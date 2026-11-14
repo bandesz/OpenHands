@@ -1681,6 +1681,48 @@ describe("AgentSettingsScreen — skills", () => {
     );
   });
 
+  it("omits a shadowed catalog skill from the profile list", async () => {
+    vi.spyOn(SkillsService, "getSkillCatalog").mockResolvedValue([
+      {
+        name: "review",
+        type: "knowledge",
+        source: "~/.agents/skills/review/SKILL.md",
+        origin: "user",
+        availability: "loaded",
+      },
+      {
+        name: "review",
+        type: "knowledge",
+        source: "/checkout/review/SKILL.md",
+        origin: "user",
+        availability: "shadowed",
+        shadow_reason: "handwritten",
+      },
+      {
+        name: "only-shadowed",
+        type: "knowledge",
+        source: "/checkout/only-shadowed/SKILL.md",
+        origin: "user",
+        availability: "shadowed",
+        shadow_reason: "duplicate_name",
+      },
+    ]);
+    renderAgentSettingsScreen({
+      agentSettingsOverride: {
+        agent_kind: "openhands",
+        public_skills: ["review"],
+        disabled_skills: [],
+      },
+    });
+
+    expect(
+      await screen.findAllByTestId("agent-settings-skills-review"),
+    ).toHaveLength(1);
+    expect(
+      screen.queryByTestId("agent-settings-skills-only-shadowed"),
+    ).not.toBeInTheDocument();
+  });
+
   it("hides skills and leaves them out of the save on a cloud backend", async () => {
     profileSupportsSkillsMock.mockReturnValue(false);
     let control: AgentSettingsSaveControl | null = null;

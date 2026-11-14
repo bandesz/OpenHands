@@ -298,9 +298,16 @@ function SkillsSettingsScreen() {
           <SkillDetailModal
             skill={selectedSkill}
             enabled={isEnabled(selectedSkill)}
-            onToggle={(enabled) => setEnabled(selectedSkill.name, enabled)}
+            onToggle={(enabled) => {
+              if (selectedSkill.availability === "shadowed") {
+                return;
+              }
+              setEnabled(selectedSkill.name, enabled);
+            }}
             onClose={() => setSelectedSkill(null)}
-            isToggleDisabled={isUnavailable}
+            isToggleDisabled={
+              isUnavailable || selectedSkill.availability === "shadowed"
+            }
           />
         )}
 

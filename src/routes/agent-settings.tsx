@@ -537,9 +537,13 @@ export function AgentSettingsScreen({
   );
   const [skillQuery, setSkillQuery] = useState("");
   const visibleSkills = React.useMemo(() => {
+    if (!skillCatalog) return skillCatalog;
+    const toggleable = skillCatalog.filter(
+      (skill) => skill.availability !== "shadowed",
+    );
     const query = skillQuery.trim().toLowerCase();
-    if (!skillCatalog || !query) return skillCatalog;
-    return skillCatalog.filter((skill) =>
+    if (!query) return toggleable;
+    return toggleable.filter((skill) =>
       [skill.name, skill.description ?? "", ...(skill.triggers ?? [])].some(
         (text) => text.toLowerCase().includes(query),
       ),

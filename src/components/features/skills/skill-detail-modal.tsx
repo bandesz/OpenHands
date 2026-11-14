@@ -69,6 +69,7 @@ export function SkillDetailModal({
   );
 
   const description = getSkillCardDescription(skill);
+  const isShadowed = skill.availability === "shadowed";
   const pills = React.useMemo(
     () =>
       buildSkillPills(skill, t, {
@@ -159,8 +160,13 @@ export function SkillDetailModal({
             <SettingsSwitch
               testId={`skill-modal-toggle-${skill.name}`}
               isToggled={enabled}
-              onToggle={onToggle}
-              isDisabled={isToggleDisabled}
+              onToggle={(next) => {
+                if (isShadowed) {
+                  return;
+                }
+                onToggle(next);
+              }}
+              isDisabled={isToggleDisabled || isShadowed}
               togglePosition="right"
             >
               {t(
