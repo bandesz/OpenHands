@@ -25,7 +25,10 @@ function isCloudBackend(): boolean {
 }
 
 function exposeRepositoryError(error: unknown): never {
-  if (isHttpError(error) && (error.status === 422 || error.status === 409)) {
+  if (
+    isHttpError(error) &&
+    (error.status === 400 || error.status === 422 || error.status === 409)
+  ) {
     const body = isRecord(error.response) ? error.response : {};
     const message = typeof body.error === "string" ? body.error : error.message;
     throw Object.assign(new Error(message), {

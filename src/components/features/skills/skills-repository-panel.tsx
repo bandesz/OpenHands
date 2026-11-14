@@ -13,9 +13,42 @@ import { cn } from "#/utils/utils";
 const SKILLS_REPOSITORY_URL_INPUT_ID = "skills-repository-url";
 const SKILLS_REPOSITORY_URL_ERROR_ID = "skills-repository-url-error";
 const SCP_GIT_URL = /^git@[^/\s:]+:[^\s]+$/;
+const SENSITIVE_URL_PARAMETERS = new Set([
+  "apikey",
+  "api_key",
+  "token",
+  "access_token",
+  "secret",
+  "key",
+  "tavilyapikey",
+]);
+
+function hasSensitiveUrlParameter(value: string): boolean {
+  const hashIndex = value.indexOf("#");
+  const withoutFragment = hashIndex === -1 ? value : value.slice(0, hashIndex);
+  const fragment = hashIndex === -1 ? "" : value.slice(hashIndex + 1);
+  const queryIndex = withoutFragment.indexOf("?");
+  const query = queryIndex === -1 ? "" : withoutFragment.slice(queryIndex + 1);
+  const names = [
+    ...new URLSearchParams(query).keys(),
+    ...new URLSearchParams(fragment).keys(),
+  ];
+  return names.some((name) => SENSITIVE_URL_PARAMETERS.has(name.toLowerCase()));
+}
+
+function hasCredentialUserinfo(value: string, protocol: string): boolean {
+  const match = /^(?:https?|ssh):\/\/([^/?#]*)/iu.exec(value);
+  if (!match) return false;
+  const at = match[1].lastIndexOf("@");
+  if (at < 0) return false;
+  const userinfo = match[1].slice(0, at);
+  if (protocol === "http:" || protocol === "https:") return true;
+  return protocol === "ssh:" && userinfo.includes(":");
+}
 
 function isSkillsRepositoryGitUrl(value: string): boolean {
   if (value.length === 0 || /\s/u.test(value)) return false;
+  if (hasSensitiveUrlParameter(value)) return false;
   if (SCP_GIT_URL.test(value)) return true;
   try {
     const parsed = new URL(value);
@@ -23,7 +56,11 @@ function isSkillsRepositoryGitUrl(value: string): boolean {
       parsed.protocol === "http:" ||
       parsed.protocol === "https:" ||
       parsed.protocol === "ssh:";
-    return allowedScheme && parsed.hostname.length > 0;
+    return (
+      allowedScheme &&
+      parsed.hostname.length > 0 &&
+      !hasCredentialUserinfo(value, parsed.protocol)
+    );
   } catch {
     return false;
   }

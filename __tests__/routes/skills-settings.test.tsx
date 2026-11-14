@@ -1075,6 +1075,54 @@ Full skill body.`,
     expect(saveButton).toBeEnabled();
   });
 
+  it("keeps save disabled for a credential URL and a token query", async () => {
+    const user = userEvent.setup();
+    mockSkillList([]);
+
+    renderSkillsSettingsScreen();
+
+    const urlField = await screen.findByTestId("skills-repository-url");
+    const saveButton = screen.getByTestId("skills-repository-save");
+
+    await user.type(urlField, "https://user:token@github.com/org/skills.git");
+    expect(saveButton).toBeDisabled();
+    expect(urlField).toHaveAccessibleDescription(
+      "SETTINGS$SKILLS_REPOSITORY_INVALID_URL",
+    );
+
+    await user.clear(urlField);
+    await user.type(urlField, "https://github.com/org/skills.git?token=secret");
+    expect(saveButton).toBeDisabled();
+    expect(urlField).toHaveAccessibleDescription(
+      "SETTINGS$SKILLS_REPOSITORY_INVALID_URL",
+    );
+  });
+
+  it("shows a 400 invalid URL error the same way as a failed save", async () => {
+    const user = userEvent.setup();
+    const repositoryUrl = "https://github.com/org/skills";
+    const serverError = "Enter an http, https, or ssh git URL.";
+    mockSkillList([]);
+    vi.spyOn(SkillsRepositoryService, "save").mockRejectedValue(
+      Object.assign(new Error("HTTP 400"), {
+        status: 400,
+        error: serverError,
+        error_code: "invalid_url",
+      }),
+    );
+
+    renderSkillsSettingsScreen();
+
+    const urlField = await screen.findByTestId("skills-repository-url");
+    await user.type(urlField, repositoryUrl);
+    await user.click(screen.getByTestId("skills-repository-save"));
+
+    const status = await screen.findByTestId("skills-repository-status");
+    expect(status).toHaveTextContent(serverError);
+    expect(urlField).toHaveValue(repositoryUrl);
+    expect(screen.queryByTestId("skill-card-review")).not.toBeInTheDocument();
+  });
+
   it("shows a failed first save until a later save succeeds", async () => {
     const user = userEvent.setup();
     const repositoryUrl = "https://github.com/org/skills";

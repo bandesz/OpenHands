@@ -149,6 +149,25 @@ describe("SkillsRepositoryService", () => {
     expect(SkillsClient).not.toHaveBeenCalled();
   });
 
+  it("exposes error_code and error from a 400 save response", async () => {
+    mockSave.mockRejectedValue(
+      new HttpError(400, "Bad Request", {
+        error_code: "invalid_url",
+        error: "Enter an http, https, or ssh git URL.",
+      }),
+    );
+
+    await expect(
+      SkillsRepositoryService.save(
+        "https://user:token@github.com/org/skills.git",
+      ),
+    ).rejects.toMatchObject({
+      status: 400,
+      error_code: "invalid_url",
+      error: "Enter an http, https, or ssh git URL.",
+    });
+  });
+
   it("exposes error_code and error from a 422 save response", async () => {
     mockSave.mockRejectedValue(
       new HttpError(422, "Unprocessable Entity", {
