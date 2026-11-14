@@ -45,6 +45,10 @@ export const SKILL_CATALOG_QUERY_KEYS = {
   all: ["skill-catalog"] as const,
 } as const;
 
+export const SKILLS_REPOSITORY_QUERY_KEYS = {
+  all: ["skills-repository"] as const,
+} as const;
+
 export const PROVIDER_CONNECTIONS_QUERY_KEYS = {
   all: ["provider-connections"] as const,
 } as const;
