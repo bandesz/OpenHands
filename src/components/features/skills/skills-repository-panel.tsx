@@ -13,15 +13,16 @@ import { cn } from "#/utils/utils";
 const SKILLS_REPOSITORY_URL_INPUT_ID = "skills-repository-url";
 const SKILLS_REPOSITORY_URL_ERROR_ID = "skills-repository-url-error";
 const SCP_GIT_URL = /^git@[^/\s:]+:[^\s]+$/;
-const SENSITIVE_URL_PARAMETERS = new Set([
-  "apikey",
-  "api_key",
-  "token",
-  "access_token",
-  "secret",
+const SENSITIVE_URL_PARAMETER_MARKERS = [
+  "authorization",
+  "cookie",
+  "credential",
   "key",
-  "tavilyapikey",
-]);
+  "password",
+  "secret",
+  "session",
+  "token",
+];
 
 function hasSensitiveUrlParameter(value: string): boolean {
   const hashIndex = value.indexOf("#");
@@ -33,7 +34,12 @@ function hasSensitiveUrlParameter(value: string): boolean {
     ...new URLSearchParams(query).keys(),
     ...new URLSearchParams(fragment).keys(),
   ];
-  return names.some((name) => SENSITIVE_URL_PARAMETERS.has(name.toLowerCase()));
+  return names.some((name) => {
+    const normalized = name.toLowerCase();
+    return SENSITIVE_URL_PARAMETER_MARKERS.some((marker) =>
+      normalized.includes(marker),
+    );
+  });
 }
 
 function hasCredentialUserinfo(value: string, protocol: string): boolean {

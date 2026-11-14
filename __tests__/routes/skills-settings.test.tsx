@@ -1098,6 +1098,29 @@ Full skill body.`,
     );
   });
 
+  it("keeps save disabled when a query name contains a secret word", async () => {
+    const user = userEvent.setup();
+    mockSkillList([]);
+
+    renderSkillsSettingsScreen();
+
+    const urlField = await screen.findByTestId("skills-repository-url");
+    const saveButton = screen.getByTestId("skills-repository-save");
+
+    await user.type(urlField, "https://host/repo.git?password=secret");
+    expect(saveButton).toBeDisabled();
+    expect(urlField).toHaveAccessibleDescription(
+      "SETTINGS$SKILLS_REPOSITORY_INVALID_URL",
+    );
+
+    await user.clear(urlField);
+    await user.type(urlField, "https://host/repo.git?private_token=secret");
+    expect(saveButton).toBeDisabled();
+    expect(urlField).toHaveAccessibleDescription(
+      "SETTINGS$SKILLS_REPOSITORY_INVALID_URL",
+    );
+  });
+
   it("shows a 400 invalid URL error the same way as a failed save", async () => {
     const user = userEvent.setup();
     const repositoryUrl = "https://github.com/org/skills";
