@@ -220,6 +220,7 @@ export function SkillsRepositoryPanel() {
       onSuccess: () => {
         setDraftUrl(null);
         setSaveError(null);
+        syncRepository.reset();
         setRemoveConfirmOpen(false);
       },
     });

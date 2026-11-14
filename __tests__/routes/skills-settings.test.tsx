@@ -2009,6 +2009,52 @@ Full skill body.`,
     ).toHaveTextContent("~/.agents/skills/review/");
   });
 
+  it("clears a dirty sync failure when the repository is removed", async () => {
+    const user = userEvent.setup();
+    const repositoryUrl = "https://github.com/org/skills";
+    let repository = readySkillsRepository(repositoryUrl);
+    vi.spyOn(SkillsRepositoryService, "get").mockImplementation(() =>
+      Promise.resolve(repository),
+    );
+    mockSkillList([]);
+    vi.spyOn(SkillsRepositoryService, "sync").mockRejectedValue(
+      Object.assign(new Error("HTTP 409"), {
+        status: 409,
+        error_code: "dirty",
+        error: "Repository has local changes. Pull was not applied.",
+      }),
+    );
+    const removeSpy = vi
+      .spyOn(SkillsRepositoryService, "remove")
+      .mockImplementation(async () => {
+        repository = absentSkillsRepository();
+      });
+
+    renderSkillsSettingsScreen();
+
+    await screen.findByTestId("skills-repository-sync");
+    await user.click(screen.getByTestId("skills-repository-sync"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("skills-repository-status")).toHaveTextContent(
+        "SETTINGS$SKILLS_REPOSITORY_DIRTY",
+      );
+    });
+
+    await user.click(screen.getByTestId("skills-repository-remove"));
+    await user.click(
+      await screen.findByTestId("skills-repository-remove-confirm"),
+    );
+
+    await waitFor(() => {
+      expect(removeSpy).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId("skills-repository-url")).toHaveValue("");
+    });
+    expect(
+      screen.queryByTestId("skills-repository-status"),
+    ).not.toBeInTheDocument();
+  });
+
   it("leaves the URL and skill cards in place when remove is dismissed", async () => {
     const user = userEvent.setup();
     const repositoryUrl = "https://github.com/org/skills";
