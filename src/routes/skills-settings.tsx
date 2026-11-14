@@ -188,7 +188,7 @@ function SkillsSettingsScreen() {
             </BrandButton>
           </div>
 
-          <SkillsRepositoryPanel />
+          {isCloud ? null : <SkillsRepositoryPanel />}
 
           {isLoading ? (
             <div className="flex flex-col gap-4">

@@ -23,6 +23,11 @@ import {
 } from "#/constants/skills-docs";
 import { MOCK_DEFAULT_USER_SETTINGS } from "#/mocks/handlers";
 import { Settings, SkillInfo } from "#/types/settings";
+import {
+  __resetActiveStoreForTests,
+  setActiveSelection,
+  setRegisteredBackends,
+} from "#/api/backend-registry/active-store";
 import { ActiveBackendProvider } from "#/contexts/active-backend-context";
 
 const navigateMock = vi.fn();
@@ -913,6 +918,34 @@ Full skill body.`,
         }),
       ),
     );
+  });
+
+  it("hides the skills repository panel on a cloud backend", async () => {
+    __resetActiveStoreForTests();
+    setRegisteredBackends([
+      {
+        id: "cloud-1",
+        name: "Cloud",
+        host: "https://app.example.com",
+        apiKey: "key",
+        kind: "cloud",
+      },
+    ]);
+    setActiveSelection({ backendId: "cloud-1", orgId: null });
+    mockSkillList([]);
+
+    try {
+      renderSkillsSettingsScreen();
+
+      await screen.findByTestId("skills-empty");
+      expect(
+        screen.queryByTestId("skills-repository-panel"),
+      ).not.toBeInTheDocument();
+      expect(SkillsRepositoryService.get).not.toHaveBeenCalled();
+    } finally {
+      window.localStorage.clear();
+      __resetActiveStoreForTests();
+    }
   });
 
   it("connects a repository and shows its skills on the same page", async () => {
