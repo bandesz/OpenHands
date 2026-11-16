@@ -2810,4 +2810,108 @@ Full skill body.`,
       clearBackendSelection();
     }
   });
+
+  it("keeps the selected backend's URL draft when another backend's save succeeds", async () => {
+    const user = userEvent.setup();
+    const firstUrl = "https://github.com/org/skills";
+    const typedOnFirst = "https://github.com/org/typed-on-a";
+    const secondUrl = "https://github.com/org/other-skills";
+    const draftUrl = "https://github.com/org/draft-on-b";
+    const saveGate = deferred<SkillsRepository>();
+    registerTwoLocalBackends();
+    mockRepositoryPerBackend(firstUrl, secondUrl);
+    mockSkillList([]);
+    vi.spyOn(SkillsRepositoryService, "save").mockImplementation(
+      () => saveGate.promise,
+    );
+    const watch = renderSkillsSettingsWithMutationWatch("success");
+
+    try {
+      const urlField = await screen.findByTestId("skills-repository-url");
+      await user.clear(urlField);
+      await user.type(urlField, typedOnFirst);
+      await user.click(screen.getByTestId("skills-repository-save"));
+      await waitFor(() => {
+        expect(screen.getByTestId("skills-repository-status")).toHaveTextContent(
+          "SETTINGS$SKILLS_REPOSITORY_SYNCING",
+        );
+      });
+
+      switchToSecondLocalBackend();
+
+      const selectedUrl = await screen.findByTestId("skills-repository-url");
+      await waitFor(() => {
+        expect(selectedUrl).toHaveValue(secondUrl);
+      });
+      await user.clear(selectedUrl);
+      await user.type(selectedUrl, draftUrl);
+      expect(screen.getByTestId("skills-repository-url")).toHaveValue(draftUrl);
+
+      saveGate.resolve(readySkillsRepository(firstUrl));
+      await watch.waitForSettled();
+
+      expect(screen.getByTestId("skills-repository-url")).toHaveValue(draftUrl);
+    } finally {
+      saveGate.resolve(readySkillsRepository(firstUrl));
+      watch.unsubscribe();
+      clearBackendSelection();
+    }
+  });
+
+  it("keeps the selected backend's save error when another backend's sync succeeds", async () => {
+    const user = userEvent.setup();
+    const firstUrl = "https://github.com/org/skills";
+    const secondUrl = "https://github.com/org/other-skills";
+    const typedUrl = "https://github.com/org/typed-on-b";
+    const saveFailure = "Could not clone https://github.com/org/typed-on-b";
+    const syncGate = deferred<SkillsRepository>();
+    registerTwoLocalBackends();
+    mockRepositoryPerBackend(firstUrl, secondUrl);
+    mockSkillList([]);
+    vi.spyOn(SkillsRepositoryService, "sync").mockImplementation(
+      () => syncGate.promise,
+    );
+    vi.spyOn(SkillsRepositoryService, "save").mockRejectedValue(
+      Object.assign(new Error("HTTP 422"), {
+        error: saveFailure,
+        error_code: "git_failed",
+      }),
+    );
+    const watch = renderSkillsSettingsWithMutationWatch("success");
+
+    try {
+      await user.click(await screen.findByTestId("skills-repository-sync"));
+      await waitFor(() => {
+        expect(screen.getByTestId("skills-repository-status")).toHaveTextContent(
+          "SETTINGS$SKILLS_REPOSITORY_SYNCING",
+        );
+      });
+
+      switchToSecondLocalBackend();
+
+      const urlField = await screen.findByTestId("skills-repository-url");
+      await waitFor(() => {
+        expect(urlField).toHaveValue(secondUrl);
+      });
+      await user.clear(urlField);
+      await user.type(urlField, typedUrl);
+      await user.click(screen.getByTestId("skills-repository-save"));
+      await waitFor(() => {
+        expect(screen.getByTestId("skills-repository-status")).toHaveTextContent(
+          saveFailure,
+        );
+      });
+
+      syncGate.resolve(readySkillsRepository(firstUrl));
+      await watch.waitForSettled();
+
+      expect(screen.getByTestId("skills-repository-status")).toHaveTextContent(
+        saveFailure,
+      );
+    } finally {
+      syncGate.resolve(readySkillsRepository(firstUrl));
+      watch.unsubscribe();
+      clearBackendSelection();
+    }
+  });
 });
