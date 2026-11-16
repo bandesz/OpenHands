@@ -157,8 +157,6 @@ export function SkillsRepositoryPanel() {
   const [saveError, setSaveError] = React.useState<string | null>(null);
   const [removeConfirmOpen, setRemoveConfirmOpen] = React.useState(false);
   const url = draftUrl ?? repository?.url ?? "";
-  const activeBackendRef = React.useRef(backend);
-  activeBackendRef.current = backend;
   const mutationOriginRef = React.useRef<{
     save: RepositoryBackendScope | null;
     sync: RepositoryBackendScope | null;
@@ -171,16 +169,9 @@ export function SkillsRepositoryPanel() {
     removeRepository.reset();
   };
 
-  const beginRepositoryMutation = (
-    kind: "save" | "sync" | "remove",
-  ): RepositoryBackendScope => {
-    const origin = { id: backend.id, host: backend.host };
-    mutationOriginRef.current[kind] = origin;
-    return origin;
+  const beginRepositoryMutation = (kind: "save" | "sync" | "remove") => {
+    mutationOriginRef.current[kind] = { id: backend.id, host: backend.host };
   };
-
-  const mutationStillHere = (origin: RepositoryBackendScope) =>
-    sameRepositoryBackend(activeBackendRef.current, origin);
 
   React.useEffect(() => {
     setDraftUrl(null);
@@ -262,15 +253,13 @@ export function SkillsRepositoryPanel() {
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!canSave) return;
-    const origin = beginRepositoryMutation("save");
+    beginRepositoryMutation("save");
     saveRepository.mutate(trimmedUrl, {
       onSuccess: () => {
-        if (!mutationStillHere(origin)) return;
         setDraftUrl(null);
         setSaveError(null);
       },
       onError: (error) => {
-        if (!mutationStillHere(origin)) return;
         setSaveError(repositoryActionFailureMessage(error));
       },
     });
@@ -284,10 +273,9 @@ export function SkillsRepositoryPanel() {
   const closeRemoveDialog = () => setRemoveConfirmOpen(false);
 
   const handleConfirmRemove = () => {
-    const origin = beginRepositoryMutation("remove");
+    beginRepositoryMutation("remove");
     removeRepository.mutate(undefined, {
       onSuccess: () => {
-        if (!mutationStillHere(origin)) return;
         setDraftUrl(null);
         setSaveError(null);
         mutationOriginRef.current.sync = null;
@@ -295,7 +283,6 @@ export function SkillsRepositoryPanel() {
         setRemoveConfirmOpen(false);
       },
       onError: (error) => {
-        if (!mutationStillHere(origin)) return;
         setSaveError(repositoryActionFailureMessage(error));
       },
     });
@@ -343,10 +330,9 @@ export function SkillsRepositoryPanel() {
               isDisabled={isSaving || isSyncPending}
               className="shrink-0"
               onClick={() => {
-                const origin = beginRepositoryMutation("sync");
+                beginRepositoryMutation("sync");
                 syncRepository.mutate(undefined, {
                   onSuccess: () => {
-                    if (!mutationStillHere(origin)) return;
                     setSaveError(null);
                   },
                 });
