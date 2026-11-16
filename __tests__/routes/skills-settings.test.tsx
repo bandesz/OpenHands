@@ -1290,6 +1290,9 @@ Full skill body.`,
       "https:///user:token@github.com/org/skills.git",
       "https:\\user:token@github.com/org/skills.git",
       "https:///token@github.com/org/skills.git",
+      "https:/:token@github.com/org/skills.git",
+      "https:\\:token@github.com/org/skills.git",
+      "https:///:token@github.com/org/skills.git",
     ];
 
     for (const credentialUrl of credentialUrls) {

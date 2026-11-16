@@ -64,9 +64,9 @@ function hasCredentialUserinfo(value: string, protocol: string): boolean {
 
 function parsedUrlHasCredential(parsed: URL): boolean {
   if (parsed.protocol === "http:" || parsed.protocol === "https:") {
-    return parsed.username.length > 0;
+    return parsed.username.length > 0 || parsed.password.length > 0;
   }
-  return parsed.protocol === "ssh:" && parsed.password.length > 0;
+  return false;
 }
 
 function isSkillsRepositoryGitUrl(value: string): boolean {
