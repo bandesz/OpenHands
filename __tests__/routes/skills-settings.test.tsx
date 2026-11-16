@@ -1179,6 +1179,13 @@ Full skill body.`,
     );
 
     await user.clear(urlField);
+    await user.type(urlField, "http://github.com/org/skills");
+    expect(saveButton).toBeEnabled();
+    expect(urlField).not.toHaveAccessibleDescription(
+      "SETTINGS$SKILLS_REPOSITORY_INVALID_URL",
+    );
+
+    await user.clear(urlField);
     await user.type(urlField, "git@github.com:org/skills.git");
     expect(saveButton).toBeEnabled();
     expect(urlField).not.toHaveAccessibleDescription(
@@ -1188,9 +1195,12 @@ Full skill body.`,
     await user.clear(urlField);
     await user.type(urlField, "ssh://git@github.com/org/skills.git");
     expect(saveButton).toBeEnabled();
+    expect(urlField).not.toHaveAccessibleDescription(
+      "SETTINGS$SKILLS_REPOSITORY_INVALID_URL",
+    );
   });
 
-  it("keeps save disabled for a credential URL and a token query", async () => {
+  it("keeps save disabled for a credential URL, an ssh password, and a token in the query or fragment", async () => {
     const user = userEvent.setup();
     mockSkillList([]);
 
@@ -1207,6 +1217,20 @@ Full skill body.`,
 
     await user.clear(urlField);
     await user.type(urlField, "https://github.com/org/skills.git?token=secret");
+    expect(saveButton).toBeDisabled();
+    expect(urlField).toHaveAccessibleDescription(
+      "SETTINGS$SKILLS_REPOSITORY_INVALID_URL",
+    );
+
+    await user.clear(urlField);
+    await user.type(urlField, "ssh://git:secret@host/repo.git");
+    expect(saveButton).toBeDisabled();
+    expect(urlField).toHaveAccessibleDescription(
+      "SETTINGS$SKILLS_REPOSITORY_INVALID_URL",
+    );
+
+    await user.clear(urlField);
+    await user.type(urlField, "https://github.com/org/skills.git#token=secret");
     expect(saveButton).toBeDisabled();
     expect(urlField).toHaveAccessibleDescription(
       "SETTINGS$SKILLS_REPOSITORY_INVALID_URL",
