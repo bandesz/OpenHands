@@ -163,8 +163,7 @@ export function SkillsRepositoryPanel() {
   const mutationOriginRef = React.useRef<{
     save: RepositoryBackendScope | null;
     sync: RepositoryBackendScope | null;
-    remove: RepositoryBackendScope | null;
-  }>({ save: null, sync: null, remove: null });
+  }>({ save: null, sync: null });
   const resetRepositoryMutationsRef = React.useRef(() => {});
   resetRepositoryMutationsRef.current = () => {
     saveRepository.reset();
@@ -172,7 +171,7 @@ export function SkillsRepositoryPanel() {
     removeRepository.reset();
   };
 
-  const beginRepositoryMutation = (kind: "save" | "sync" | "remove") => {
+  const beginRepositoryMutation = (kind: "save" | "sync") => {
     mutationOriginRef.current[kind] = { id: backend.id, host: backend.host };
   };
 
@@ -180,7 +179,7 @@ export function SkillsRepositoryPanel() {
     setDraftUrl(null);
     setSaveError(null);
     setRemoveConfirmOpen(false);
-    mutationOriginRef.current = { save: null, sync: null, remove: null };
+    mutationOriginRef.current = { save: null, sync: null };
     resetRepositoryMutationsRef.current();
   }, [backend.id, backend.host]);
 
@@ -276,7 +275,6 @@ export function SkillsRepositoryPanel() {
   const closeRemoveDialog = () => setRemoveConfirmOpen(false);
 
   const handleConfirmRemove = () => {
-    beginRepositoryMutation("remove");
     removeRepository.mutate(undefined, {
       onSuccess: () => {
         setDraftUrl(null);
