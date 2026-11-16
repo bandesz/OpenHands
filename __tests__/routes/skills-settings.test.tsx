@@ -30,6 +30,10 @@ import {
   setRegisteredBackends,
 } from "#/api/backend-registry/active-store";
 import { ActiveBackendProvider } from "#/contexts/active-backend-context";
+import {
+  SKILL_CATALOG_QUERY_KEYS,
+  SKILLS_REPOSITORY_QUERY_KEYS,
+} from "#/hooks/query/query-keys";
 
 const navigateMock = vi.fn();
 let migrationState: {
@@ -150,6 +154,12 @@ function clearBackendSelection() {
   window.localStorage.clear();
   window.sessionStorage.clear();
   __resetActiveStoreForTests();
+}
+
+function switchToFirstLocalBackend() {
+  act(() => {
+    setActiveSelection({ backendId: "local-1", orgId: null });
+  });
 }
 
 function switchToSecondLocalBackend() {
@@ -2914,6 +2924,184 @@ Full skill body.`,
     } finally {
       syncGate.resolve(readySkillsRepository(firstUrl));
       watch.unsubscribe();
+      clearBackendSelection();
+    }
+  });
+
+  it("refreshes only the catalog of the repository that left syncing", async () => {
+    const firstUrl = "https://github.com/org/skills";
+    const secondUrl = "https://github.com/org/other-skills";
+    const updatedSha = "fedcba9876543210fedcba9876543210fedcba98";
+    const reviewSource = `${REPOSITORY_CHECKOUT_PATH}/review/SKILL.md`;
+    const firstHost = "http://127.0.0.1:3000";
+    const secondHost = "http://127.0.0.1:4000";
+    const firstCatalogKey = [
+      ...SKILL_CATALOG_QUERY_KEYS.all,
+      "local-1",
+      firstHost,
+    ];
+    const secondCatalogKey = [
+      ...SKILL_CATALOG_QUERY_KEYS.all,
+      "local-2",
+      secondHost,
+    ];
+    const firstRepositoryKey = [
+      ...SKILLS_REPOSITORY_QUERY_KEYS.all,
+      "local-1",
+      firstHost,
+    ];
+    registerTwoLocalBackends();
+    setActiveSelection({ backendId: "local-2", orgId: null });
+
+    let firstDescription = "Review the change.";
+    let firstFetches = 0;
+    const firstPolls: ReturnType<typeof deferred<SkillsRepository>>[] = [];
+    const catalogFetches: string[] = [];
+    vi.spyOn(SkillsRepositoryService, "get").mockImplementation(() => {
+      const backendId = getActiveBackend().backend.id;
+      if (backendId === "local-2") {
+        return Promise.resolve({
+          ...readySkillsRepository(secondUrl),
+          commit_sha: SECOND_REPOSITORY_SHA,
+        });
+      }
+      firstFetches += 1;
+      if (firstFetches === 1) {
+        return Promise.resolve({
+          ...readySkillsRepository(firstUrl),
+          status: "syncing",
+        });
+      }
+      const gate = deferred<SkillsRepository>();
+      firstPolls.push(gate);
+      return gate.promise;
+    });
+    vi.spyOn(SkillsService, "getSkillCatalog").mockImplementation(async () => {
+      const backendId = getActiveBackend().backend.id;
+      catalogFetches.push(backendId);
+      return [
+        buildSkill({
+          name: "review",
+          origin: "user",
+          source: reviewSource,
+          description:
+            backendId === "local-2"
+              ? "Review on the other backend."
+              : firstDescription,
+          triggers: ["review-please"],
+        }),
+      ];
+    });
+    vi.spyOn(SkillsService, "getSkills").mockResolvedValue([]);
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const secondCatalogFetches = () =>
+      catalogFetches.filter((id) => id === "local-2").length;
+
+    vi.useFakeTimers();
+    try {
+      renderSkillsSettingsScreen("/skills", queryClient);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(screen.getByTestId("skills-repository-url")).toHaveValue(
+        secondUrl,
+      );
+      expect(screen.getByTestId("skills-repository-status")).toHaveTextContent(
+        "SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE",
+      );
+      expect(screen.getByTestId("skill-description-review")).toHaveTextContent(
+        "Review on the other backend.",
+      );
+      expect(secondCatalogFetches()).toBe(1);
+
+      switchToFirstLocalBackend();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(screen.getByTestId("skills-repository-status")).toHaveTextContent(
+        "SETTINGS$SKILLS_REPOSITORY_SYNCING",
+      );
+      expect(screen.getByTestId("skill-description-review")).toHaveTextContent(
+        "Review the change.",
+      );
+      expect(firstFetches).toBe(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_000);
+      });
+      expect(firstFetches).toBe(2);
+      expect(firstPolls).toHaveLength(1);
+
+      const secondFetchesBeforeReturn = secondCatalogFetches();
+      switchToSecondLocalBackend();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(screen.getByTestId("skills-repository-url")).toHaveValue(
+        secondUrl,
+      );
+      expect(screen.getByTestId("skill-description-review")).toHaveTextContent(
+        "Review on the other backend.",
+      );
+      expect(secondCatalogFetches()).toBe(secondFetchesBeforeReturn);
+      expect(queryClient.getQueryState(firstCatalogKey)?.isInvalidated).toBe(
+        false,
+      );
+      expect(queryClient.getQueryState(secondCatalogKey)?.isInvalidated).toBe(
+        false,
+      );
+
+      const repository = queryClient.getQueryCache().find({
+        queryKey: firstRepositoryKey,
+      });
+      expect(repository?.getObserversCount()).toBe(0);
+
+      firstDescription = "Review the updated change.";
+      await act(async () => {
+        firstPolls[0]?.resolve({
+          ...readySkillsRepository(firstUrl),
+          commit_sha: updatedSha,
+        });
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(repository?.getObserversCount()).toBe(0);
+      expect(
+        queryClient.getQueryData<SkillsRepository>(firstRepositoryKey)?.status,
+      ).toBe("ready");
+      expect(queryClient.getQueryState(firstCatalogKey)?.isInvalidated).toBe(
+        true,
+      );
+      expect(queryClient.getQueryState(secondCatalogKey)?.isInvalidated).toBe(
+        false,
+      );
+      expect(secondCatalogFetches()).toBe(secondFetchesBeforeReturn);
+      expect(screen.getByTestId("skill-description-review")).toHaveTextContent(
+        "Review on the other backend.",
+      );
+
+      switchToFirstLocalBackend();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(screen.getByTestId("skill-description-review")).toHaveTextContent(
+        "Review the updated change.",
+      );
+      const status = screen.getByTestId("skills-repository-status");
+      expect(status).toHaveTextContent(
+        "SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE",
+      );
+      expectVisibleRepositorySha(status, updatedSha);
+      expect(secondCatalogFetches()).toBe(secondFetchesBeforeReturn);
+    } finally {
+      vi.useRealTimers();
       clearBackendSelection();
     }
   });
