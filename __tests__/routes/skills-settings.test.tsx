@@ -1272,6 +1272,73 @@ Full skill body.`,
     );
   });
 
+  it("keeps save disabled for a non-canonical credential URL", async () => {
+    const user = userEvent.setup();
+    mockSkillList([]);
+    const saveSpy = vi
+      .spyOn(SkillsRepositoryService, "save")
+      .mockResolvedValue(absentSkillsRepository());
+
+    renderSkillsSettingsScreen();
+
+    const urlField = await screen.findByTestId("skills-repository-url");
+    const saveButton = screen.getByTestId("skills-repository-save");
+    const form = urlField.closest("form");
+    if (!form) throw new Error("repository form missing");
+
+    const credentialUrls = [
+      "https:///user:token@github.com/org/skills.git",
+      "https:\\user:token@github.com/org/skills.git",
+      "https:///token@github.com/org/skills.git",
+    ];
+
+    for (const credentialUrl of credentialUrls) {
+      await user.clear(urlField);
+      await user.type(urlField, credentialUrl);
+      expect(urlField).toHaveValue(credentialUrl);
+      expect(saveButton).toBeDisabled();
+      expect(urlField).toHaveAccessibleDescription(
+        "SETTINGS$SKILLS_REPOSITORY_INVALID_URL",
+      );
+      fireEvent.submit(form);
+      expect(saveSpy).not.toHaveBeenCalled();
+    }
+  });
+
+  it("keeps save disabled for a schemeless host and a non-git scheme", async () => {
+    const user = userEvent.setup();
+    mockSkillList([]);
+    const saveSpy = vi
+      .spyOn(SkillsRepositoryService, "save")
+      .mockResolvedValue(absentSkillsRepository());
+
+    renderSkillsSettingsScreen();
+
+    const urlField = await screen.findByTestId("skills-repository-url");
+    const saveButton = screen.getByTestId("skills-repository-save");
+    const form = urlField.closest("form");
+    if (!form) throw new Error("repository form missing");
+
+    await user.type(urlField, "github.com/org/skills");
+    expect(urlField).toHaveValue("github.com/org/skills");
+    expect(saveButton).toBeDisabled();
+    expect(urlField).toHaveAccessibleDescription(
+      "SETTINGS$SKILLS_REPOSITORY_INVALID_URL",
+    );
+    fireEvent.submit(form);
+    expect(saveSpy).not.toHaveBeenCalled();
+
+    await user.clear(urlField);
+    await user.type(urlField, "ftp://github.com/org/skills.git");
+    expect(urlField).toHaveValue("ftp://github.com/org/skills.git");
+    expect(saveButton).toBeDisabled();
+    expect(urlField).toHaveAccessibleDescription(
+      "SETTINGS$SKILLS_REPOSITORY_INVALID_URL",
+    );
+    fireEvent.submit(form);
+    expect(saveSpy).not.toHaveBeenCalled();
+  });
+
   it("keeps save disabled when a query name contains a secret word", async () => {
     const user = userEvent.setup();
     mockSkillList([]);

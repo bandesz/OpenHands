@@ -62,6 +62,13 @@ function hasCredentialUserinfo(value: string, protocol: string): boolean {
   return protocol === "ssh:" && userinfo.includes(":");
 }
 
+function parsedUrlHasCredential(parsed: URL): boolean {
+  if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+    return parsed.username.length > 0;
+  }
+  return parsed.protocol === "ssh:" && parsed.password.length > 0;
+}
+
 function isSkillsRepositoryGitUrl(value: string): boolean {
   if (value.length === 0 || /\s/u.test(value)) return false;
   if (hasSensitiveUrlParameter(value)) return false;
@@ -75,7 +82,8 @@ function isSkillsRepositoryGitUrl(value: string): boolean {
     return (
       allowedScheme &&
       parsed.hostname.length > 0 &&
-      !hasCredentialUserinfo(value, parsed.protocol)
+      !hasCredentialUserinfo(value, parsed.protocol) &&
+      !parsedUrlHasCredential(parsed)
     );
   } catch {
     return false;
