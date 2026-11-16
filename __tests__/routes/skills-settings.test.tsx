@@ -1282,6 +1282,38 @@ Full skill body.`,
     );
   });
 
+  it("keeps save disabled for an ssh password hidden by a leading control character", async () => {
+    const user = userEvent.setup();
+    mockSkillList([]);
+    const saveSpy = vi
+      .spyOn(SkillsRepositoryService, "save")
+      .mockResolvedValue(absentSkillsRepository());
+
+    renderSkillsSettingsScreen();
+
+    const urlField = await screen.findByTestId("skills-repository-url");
+    const saveButton = screen.getByTestId("skills-repository-save");
+    const form = urlField.closest("form");
+    if (!form) throw new Error("repository form missing");
+
+    const hiddenPasswordUrl = "\u0000ssh://git:secret@host/repo.git";
+    fireEvent.change(urlField, { target: { value: hiddenPasswordUrl } });
+    expect(urlField).toHaveValue(hiddenPasswordUrl);
+    expect(saveButton).toBeDisabled();
+    expect(urlField).toHaveAccessibleDescription(
+      "SETTINGS$SKILLS_REPOSITORY_INVALID_URL",
+    );
+    fireEvent.submit(form);
+    expect(saveSpy).not.toHaveBeenCalled();
+
+    await user.clear(urlField);
+    await user.type(urlField, "ssh://git@github.com/org/skills.git");
+    expect(saveButton).toBeEnabled();
+    expect(urlField).not.toHaveAccessibleDescription(
+      "SETTINGS$SKILLS_REPOSITORY_INVALID_URL",
+    );
+  });
+
   it("keeps save disabled for a non-canonical credential URL", async () => {
     const user = userEvent.setup();
     mockSkillList([]);

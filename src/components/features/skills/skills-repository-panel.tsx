@@ -66,6 +66,9 @@ function parsedUrlHasCredential(parsed: URL): boolean {
   if (parsed.protocol === "http:" || parsed.protocol === "https:") {
     return parsed.username.length > 0 || parsed.password.length > 0;
   }
+  if (parsed.protocol === "ssh:") {
+    return parsed.password.length > 0;
+  }
   return false;
 }
 
