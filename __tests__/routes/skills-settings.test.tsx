@@ -1119,6 +1119,9 @@ Full skill body.`,
     expect(within(card).getByTestId("skill-source-review")).toHaveTextContent(
       reviewSource,
     );
+    expect(screen.getByTestId("skills-repository-panel")).not.toHaveTextContent(
+      "SETTINGS$SKILLS_REPOSITORY_NO_SKILLS",
+    );
     expect(within(card).getByTestId("skill-toggle-review")).toHaveAttribute(
       "aria-checked",
       "true",
@@ -1150,6 +1153,34 @@ Full skill body.`,
     expect(screen.getByTestId("skills-repository-url")).toHaveValue(
       "https://github.com/org/skills",
     );
+  });
+
+  it("says when a ready repository catalog contains only a hand-written skill", async () => {
+    const handwrittenSource = "~/.agents/skills/review/SKILL.md";
+    vi.spyOn(SkillsRepositoryService, "get").mockResolvedValue(
+      readySkillsRepository("https://github.com/org/skills"),
+    );
+    mockSkillList([
+      buildSkill({
+        name: "review",
+        origin: "user",
+        source: handwrittenSource,
+        description: "Hand-written review notes.",
+        triggers: ["review-please"],
+      }),
+    ]);
+
+    renderSkillsSettingsScreen();
+
+    const card = await screen.findByTestId("skill-card-review");
+    expect(within(card).getByTestId("skill-source-review")).toHaveTextContent(
+      handwrittenSource,
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("skills-repository-panel")).toHaveTextContent(
+        "SETTINGS$SKILLS_REPOSITORY_NO_SKILLS",
+      );
+    });
   });
 
   it("keeps save disabled until the URL is an http, https, or ssh git URL", async () => {
