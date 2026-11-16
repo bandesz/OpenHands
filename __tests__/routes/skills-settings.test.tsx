@@ -109,7 +109,11 @@ function readySkillsRepository(url: string): SkillsRepository {
 }
 
 const SECOND_REPOSITORY_SHA = "89abcdef0123456789abcdef0123456789abcdef";
-const SECOND_REPOSITORY_SHORT_SHA = "89abcde";
+
+function expectVisibleRepositorySha(status: HTMLElement, commitSha: string) {
+  expect(status).toHaveTextContent(commitSha.slice(0, 7));
+  expect(status).not.toHaveTextContent(commitSha.slice(0, 8));
+}
 
 function deferred<T>() {
   let resolve: (value: T) => void = () => {};
@@ -1107,7 +1111,7 @@ Full skill body.`,
     await waitFor(() => {
       expect(status).toHaveTextContent("SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE");
     });
-    expect(status).toHaveTextContent("0123456");
+    expectVisibleRepositorySha(status, REPOSITORY_COMMIT_SHA);
     expect(screen.getByTestId("skills-repository-sync")).toBeEnabled();
     expect(urlField).toHaveValue(repositoryUrl);
 
@@ -1145,7 +1149,7 @@ Full skill body.`,
     const panel = screen.getByTestId("skills-repository-panel");
     const status = within(panel).getByTestId("skills-repository-status");
     expect(status).toHaveTextContent("SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE");
-    expect(status).toHaveTextContent("0123456");
+    expectVisibleRepositorySha(status, REPOSITORY_COMMIT_SHA);
     expect(
       panel.compareDocumentPosition(screen.getByTestId("skills-empty")) &
         Node.DOCUMENT_POSITION_FOLLOWING,
@@ -1403,7 +1407,7 @@ Full skill body.`,
         "SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE",
       );
       expect(savedStatus).not.toHaveTextContent(serverError);
-      expect(savedStatus).toHaveTextContent("0123456");
+      expectVisibleRepositorySha(savedStatus, REPOSITORY_COMMIT_SHA);
     });
     expect(urlField).toHaveValue(repositoryUrl);
     expect(
@@ -1488,7 +1492,7 @@ Full skill body.`,
     const status = await screen.findByTestId("skills-repository-status");
     expect(status).toHaveTextContent(serverError);
     expect(status).toHaveTextContent("SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE");
-    expect(status).toHaveTextContent("0123456");
+    expectVisibleRepositorySha(status, REPOSITORY_COMMIT_SHA);
     expect(urlField).toHaveValue(urlB);
     expect(within(card).getByTestId("skill-source-review")).toHaveTextContent(
       reviewSource,
@@ -1499,7 +1503,7 @@ Full skill body.`,
     await user.type(urlField, "x");
     expect(status).not.toHaveTextContent(serverError);
     expect(status).toHaveTextContent("SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE");
-    expect(status).toHaveTextContent("0123456");
+    expectVisibleRepositorySha(status, REPOSITORY_COMMIT_SHA);
     expect(urlField).toHaveValue(`${urlB}x`);
     expect(screen.getByTestId("skill-card-review")).toBeInTheDocument();
     expect(getSpy).toHaveBeenCalledTimes(getsBeforeSave);
@@ -1564,7 +1568,7 @@ Full skill body.`,
     await waitFor(() => {
       const status = screen.getByTestId("skills-repository-status");
       expect(status).toHaveTextContent("SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE");
-      expect(status).toHaveTextContent("89abcde");
+      expectVisibleRepositorySha(status, repositoryBSha);
       expect(status).not.toHaveTextContent("0123456");
     });
     expect(urlField).toHaveValue(urlB);
@@ -1633,7 +1637,7 @@ Full skill body.`,
     const status = await screen.findByTestId("skills-repository-status");
     await waitFor(() => {
       expect(status).toHaveTextContent("SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE");
-      expect(status).toHaveTextContent("89abcde");
+      expectVisibleRepositorySha(status, updatedSha);
       expect(status).not.toHaveTextContent("0123456");
       expect(status).not.toHaveTextContent(
         "SETTINGS$SKILLS_REPOSITORY_SYNCING",
@@ -1713,7 +1717,7 @@ Full skill body.`,
 
       const status = screen.getByTestId("skills-repository-status");
       expect(status).toHaveTextContent("SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE");
-      expect(status).toHaveTextContent("89abcde");
+      expectVisibleRepositorySha(status, updatedSha);
       await act(async () => {
         await vi.advanceTimersByTimeAsync(1);
       });
@@ -1769,7 +1773,7 @@ Full skill body.`,
     });
     const status = screen.getByTestId("skills-repository-status");
     expect(status).toHaveTextContent("SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE");
-    expect(status).toHaveTextContent("fedcba9");
+    expectVisibleRepositorySha(status, updatedSha);
   });
 
   it("shows a dirty sync failure and keeps the previous SHA", async () => {
@@ -1806,7 +1810,7 @@ Full skill body.`,
     await waitFor(() => {
       expect(status).toHaveTextContent("SETTINGS$SKILLS_REPOSITORY_DIRTY");
     });
-    expect(status).toHaveTextContent("0123456");
+    expectVisibleRepositorySha(status, REPOSITORY_COMMIT_SHA);
     expect(status).not.toHaveTextContent(
       "SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE",
     );
@@ -1850,7 +1854,7 @@ Full skill body.`,
     await waitFor(() => {
       expect(status).toHaveTextContent(serverError);
     });
-    expect(status).toHaveTextContent("0123456");
+    expectVisibleRepositorySha(status, REPOSITORY_COMMIT_SHA);
     expect(status).not.toHaveTextContent(
       "SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE",
     );
@@ -1874,7 +1878,7 @@ Full skill body.`,
 
     const status = await screen.findByTestId("skills-repository-status");
     expect(status).toHaveTextContent(serverError);
-    expect(status).toHaveTextContent("0123456");
+    expectVisibleRepositorySha(status, REPOSITORY_COMMIT_SHA);
     expect(status).not.toHaveTextContent(
       "SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE",
     );
@@ -1946,7 +1950,7 @@ Full skill body.`,
 
     const status = await screen.findByTestId("skills-repository-status");
     expect(status).toHaveTextContent(saveFailure);
-    expect(status).toHaveTextContent("0123456");
+    expectVisibleRepositorySha(status, REPOSITORY_COMMIT_SHA);
 
     await user.click(screen.getByTestId("skills-repository-sync"));
 
@@ -1954,7 +1958,7 @@ Full skill body.`,
       expect(status).toHaveTextContent("SETTINGS$SKILLS_REPOSITORY_DIRTY");
     });
     expect(status).toHaveTextContent(saveFailure);
-    expect(status).toHaveTextContent("0123456");
+    expectVisibleRepositorySha(status, REPOSITORY_COMMIT_SHA);
     expect(screen.getByTestId("skill-card-review")).toBeInTheDocument();
 
     syncSpy.mockImplementation(async () => {
@@ -1965,7 +1969,7 @@ Full skill body.`,
 
     await waitFor(() => {
       expect(status).toHaveTextContent("SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE");
-      expect(status).toHaveTextContent("89abcde");
+      expectVisibleRepositorySha(status, updatedSha);
       expect(status).not.toHaveTextContent(saveFailure);
       expect(status).not.toHaveTextContent("SETTINGS$SKILLS_REPOSITORY_DIRTY");
     });
@@ -2173,8 +2177,9 @@ Full skill body.`,
     await user.click(screen.getByTestId("skills-repository-sync"));
 
     await waitFor(() => {
-      expect(screen.getByTestId("skills-repository-status")).toHaveTextContent(
-        "89abcde",
+      expectVisibleRepositorySha(
+        screen.getByTestId("skills-repository-status"),
+        updatedSha,
       );
       expect(screen.getByTestId("skill-description-review")).toHaveTextContent(
         "Review the updated change.",
@@ -2531,7 +2536,7 @@ Full skill body.`,
         expect(status).toHaveTextContent(
           "SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE",
         );
-        expect(status).toHaveTextContent(SECOND_REPOSITORY_SHORT_SHA);
+        expectVisibleRepositorySha(status, SECOND_REPOSITORY_SHA);
         expect(status).not.toHaveTextContent(syncError);
       });
     } finally {
@@ -2571,7 +2576,7 @@ Full skill body.`,
         expect(status).toHaveTextContent(
           "SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE",
         );
-        expect(status).toHaveTextContent(SECOND_REPOSITORY_SHORT_SHA);
+        expectVisibleRepositorySha(status, SECOND_REPOSITORY_SHA);
         expect(status).not.toHaveTextContent(
           "SETTINGS$SKILLS_REPOSITORY_SYNCING",
         );
@@ -2633,7 +2638,7 @@ Full skill body.`,
 
       const status = screen.getByTestId("skills-repository-status");
       expect(status).toHaveTextContent("SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE");
-      expect(status).toHaveTextContent(SECOND_REPOSITORY_SHORT_SHA);
+      expectVisibleRepositorySha(status, SECOND_REPOSITORY_SHA);
       expect(status).not.toHaveTextContent(saveFailure);
       expect(status).not.toHaveTextContent(
         "SETTINGS$SKILLS_REPOSITORY_SYNCING",
@@ -2684,7 +2689,7 @@ Full skill body.`,
 
       const status = screen.getByTestId("skills-repository-status");
       expect(status).toHaveTextContent("SETTINGS$SKILLS_REPOSITORY_UP_TO_DATE");
-      expect(status).toHaveTextContent(SECOND_REPOSITORY_SHORT_SHA);
+      expectVisibleRepositorySha(status, SECOND_REPOSITORY_SHA);
       expect(status).not.toHaveTextContent(removeFailure);
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     } finally {
